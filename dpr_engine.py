@@ -3,147 +3,92 @@ import pandas as pd
 import numpy as np
 import io
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
 
-st.set_page_config(page_title="MSME Professional DPR Engine", layout="wide")
+st.set_page_config(page_title="Professional CMA & Balance Sheet", layout="wide")
+st.title("🏦 Full Manufacturing P&L and Balance Sheet Engine")
 
-# --- HEADER & FIRM DETAILS (Module 1) ---
-st.title("🏭 Manufacturing Project Report & CMA Engine")
-with st.expander("📝 Step 1: Basic Firm Details", expanded=True):
-    c1, c2 = st.columns(2)
-    firm_name = c1.text_input("Firm Name", "Kailash Manufacturing")
-    gst_no = c2.text_input("GST Number")
-    udyam_no = c1.text_input("Udyam Number")
-    address = c2.text_area("Address")
-    mobile = c1.text_input("Mobile No")
-
-# --- CAPEX & PROJECT COST (Modules 10 & 11) ---
-with st.expander("🏗️ Step 2: CAPEX, Project Cost & Funding"):
-    st.subheader("Asset Investment (CAPEX)")
-    col1, col2, col3 = st.columns(3)
-    val_land = col1.number_input("Land & Building", value=2000000)
-    val_machinery = col2.number_input("Plant & Machinery", value=2500000)
-    val_comp = col3.number_input("Computers/Printers", value=100000)
-    val_furniture = col1.number_input("Furniture & Fixtures", value=200000)
-    val_car = col2.number_input("Vehicles/Car", value=800000)
-    val_other = col3.number_input("Other Fixed Assets", value=0)
-
-    total_capex = val_land + val_machinery + val_comp + val_furniture + val_car + val_other
-    st.divider()
+# --- INPUT SECTION (Simplified for clarity) ---
+with st.sidebar:
+    st.header("🏢 Capital & Loan")
+    total_cost = st.number_input("Total Project Cost", value=5000000)
+    own_pct = st.number_input("Own Contribution (%)", value=25.0)
+    own_cap = total_cost * (own_pct/100)
+    loan_amt = total_cost - own_cap
     
-    st.subheader("Means of Finance")
-    # CHANGED: Slider replaced with numeric input box as requested
-    own_cont_pct = st.number_input("Own Contribution (%)", min_value=0.0, max_value=100.0, value=25.0, step=0.1)
+    st.header("⚙️ Operations")
+    max_sales = st.number_input("Max Annual Sales Revenue", value=8000000)
+    rm_cost_pct = st.number_input("Raw Material Cost (%)", value=55.0) / 100
+    util_y1 = st.number_input("Year 1 Utilization (%)", value=60.0) / 100
+
+# --- FINANCIAL CALCULATION ---
+years = [f"Year {i}" for i in range(1, 8)]
+pl_data = []
+bs_data = []
+
+curr_loan = loan_amt
+for i in range(7):
+    # --- PROFIT & LOSS ACCOUNT ---
+    util = min(0.95, util_y1 + (i * 0.05))
+    sales = max_sales * util * (1.08**i) # 8% growth
+    cogs = sales * rm_cost_pct
+    salaries = 600000 * (1.07**i)
+    ebitda = sales - cogs - salaries
+    depr = total_cost * 0.10
+    interest = curr_loan * 0.105
+    pbt = ebitda - depr - interest
+    tax = max(0, pbt * 0.25)
+    pat = pbt - tax
     
-    own_capital = (total_capex * own_cont_pct) / 100
-    term_loan_req = total_capex - own_capital
-    st.info(f"Total Project Cost: ₹{total_capex:,.0f} | Own Capital: ₹{own_capital:,.0f} | Term Loan: ₹{term_loan_req:,.0f}")
+    pl_data.append({
+        "Particulars": years[i], "Gross Sales": sales, "COGS": cogs, 
+        "EBITDA": ebitda, "Interest": interest, "Depreciation": depr, "PBT": pbt, "PAT": pat
+    })
 
-# --- LOAN & WORKING CAPITAL (Modules 2, 3 & 13) ---
-with st.expander("💰 Step 3: Loan & Working Capital Details"):
-    c1, c2, c3 = st.columns(3)
-    loan_tenure = c1.number_input("Term Loan Tenure (Months)", value=84)
-    loan_rate = c2.number_input("Term Loan Rate (%)", value=10.5) / 100
-    moratorium = c3.number_input("Moratorium Period (Months)", value=6)
+    # --- BALANCE SHEET (Module 12 & 13) ---
+    stock = (cogs / 365) * 30 # 30 Days Stock
+    debtors = (sales / 365) * 45 # 45 Days Debtors
+    cash = pat * 0.10 # Cash reserve
+    curr_assets = stock + debtors + cash
     
-    cc_limit = c1.number_input("CC Limit (Working Capital)", value=1000000)
-    cc_rate = c2.number_input("CC Interest Rate (%)", value=11.0) / 100
-    cc_util_val = c3.number_input("Avg. CC Utilization (%)", min_value=0, max_value=100, value=70)
-
-# --- MANUFACTURING & SALES (Modules 4, 5, 12) ---
-with st.expander("⚙️ Step 4: Sales, Manufacturing & Stock"):
-    c1, c2, c3 = st.columns(3)
-    unit_name = c1.selectbox("Unit Type", ["KG", "MT", "Nos", "Units"])
-    max_cap = c2.number_input(f"Max Annual Capacity ({unit_name})", value=10000)
-    sell_price = c3.number_input("Selling Price per Unit (₹)", value=1000)
-    growth_val = c1.number_input("Annual Sales Growth (%)", value=10.0) / 100
-    util_yr1_val = c2.number_input("Year 1 Capacity Utilization (%)", value=60.0) / 100
+    # Liabilities
+    creditors = (cogs / 365) * 30
+    prin_repay = loan_amt / 7
+    curr_liab = creditors + prin_repay # Incl. Current Portion of Loan
+    curr_loan -= prin_repay
     
-    st.subheader("Direct Manufacturing Expenses (Per Unit)")
-    rm_cost = c1.number_input("Raw Material Cost per Unit", value=500)
-    other_var_mfg = c2.number_input("Other Variable Mfg Cost", value=50)
-    
-    st.subheader("Working Capital Cycle (Days)")
-    stock_days = c1.number_input("Stock Days (Raw Material)", value=30)
-    debtor_days = c2.number_input("Debtor Days", value=45)
-    creditor_days = c3.number_input("Creditor Days", value=30)
+    bs_data.append({
+        "Year": years[i], "Net Fixed Assets": total_cost - (depr*(i+1)),
+        "Current Assets": curr_assets, "Total Assets": (total_cost - (depr*(i+1))) + curr_assets,
+        "Net Worth": own_cap + (pat*(i+1)), "Long Term Loan": max(0, curr_loan),
+        "Current Liabilities": curr_liab, "Total Liabilities": (own_cap + (pat*(i+1))) + max(0, curr_loan) + curr_liab
+    })
 
-# --- OVERHEADS & TAX (Modules 6, 7, 8, 9, 14) ---
-with st.expander("🏢 Step 5: Overheads & Taxation"):
-    constitution = st.selectbox("Business Type (For Tax)", ["Proprietor", "Partnership", "Company"])
-    c1, c2 = st.columns(2)
-    salary_fix = c1.number_input("Monthly Fixed Salary (Indirect)", value=100000)
-    salary_var = c2.number_input("Monthly Manufacturing Wages (Direct)", value=50000)
-    rent_exp = c1.number_input("Monthly Rental Exp", value=40000)
-    admin_exp = c2.number_input("Monthly Admin/Office Exp", value=15000)
-    annual_hike_val = st.number_input("Annual Salary/Exp Hike (%)", value=7.0) / 100
+df_pl = pd.DataFrame(pl_data).set_index("Particulars").transpose()
+df_bs = pd.DataFrame(bs_data).set_index("Year").transpose()
 
-# --- CALCULATION BUTTON ---
-if st.button("🚀 Generate Full 7-Year DPR & CMA"):
-    start_date = datetime(2025, 4, 1) 
-    years = [f"FY {start_date.year + i}-{str(start_date.year + i + 1)[2:]}" for i in range(7)]
-    
-    m_rate = loan_rate / 12
-    repay_months = loan_tenure - moratorium
-    emi = term_loan_req * m_rate * ((1 + m_rate)**repay_months) / (((1 + m_rate)**repay_months) - 1)
-    
-    results = []
-    curr_loan = term_loan_req
-    
-    for y in range(7):
-        util = min(0.95, util_yr1_val + (y * 0.05))
-        annual_units = max_cap * util
-        revenue = annual_units * sell_price * (1 + growth_val)**y
-        rm_total = annual_units * rm_cost * (1 + annual_hike_val)**y
-        mfg_var = annual_units * other_var_mfg * (1 + annual_hike_val)**y
-        salaries = (salary_fix + salary_var) * 12 * (1 + annual_hike_val)**y
-        rent_admin = (rent_exp + admin_exp) * 12 * (1 + annual_hike_val)**y
-        
-        ebitda = revenue - rm_total - mfg_var - salaries - rent_admin
-        depr = (val_machinery * 0.15) + (val_comp * 0.40) + (val_land * 0.05) + (val_furniture * 0.10) + (val_car * 0.15)
-        
-        int_term = curr_loan * loan_rate
-        int_cc = (cc_limit * (cc_util_val/100)) * cc_rate
-        pbt = ebitda - depr - int_term - int_cc
-        
-        tax_rate = 0.25 if constitution == "Company" else 0.30
-        tax = max(0, pbt * tax_rate)
-        pat = pbt - tax
-        
-        prin_repay = (emi * 12) - int_term if y > 0 else 0
-        # Split Principal for Current Ratio (Module 13)
-        curr_liability_prin = emi * 12 if y < 6 else curr_loan
-        curr_loan -= prin_repay
-        
-        results.append({
-            "Year": years[y], "Sales": revenue, "Direct_Cost": rm_total + mfg_var, 
-            "EBITDA": ebitda, "Depreciation": depr, "Interest": int_term + int_cc,
-            "PBT": pbt, "Tax": tax, "PAT": pat, "Repayment": prin_repay, "Loan_Bal": max(0, curr_loan)
-        })
+# --- DISPLAY ---
+t1, t2, t3 = st.tabs(["Profit & Loss A/c", "Balance Sheet", "Ratio Sheet"])
 
-    df = pd.DataFrame(results)
+with t1:
+    st.subheader("📊 Projected Profit & Loss Statement")
+    st.dataframe(df_pl.style.format("₹{:,.0f}"), use_container_width=True)
 
-    # --- RATIO & FLOW CALCULATIONS (Modules 15 & 16) ---
-    st.subheader(f"📊 7-Year CMA for {firm_name}")
-    st.dataframe(df.style.format(precision=0, thousands=","), use_container_width=True)
+with t2:
+    st.subheader("⚖️ Projected Balance Sheet")
+    st.dataframe(df_bs.style.format("₹{:,.0f}"), use_container_width=True)
 
-    t1, t2 = st.tabs(["Flow Statements", "Ratio Analysis"])
-    with t1:
-        df['Cash_Inflow'] = df['PAT'] + df['Depreciation']
-        st.write("**Projected Cash Flow**")
-        st.dataframe(df[['Year', 'Cash_Inflow', 'Repayment', 'Tax']].style.format(precision=0, thousands=","))
-    with t2:
-        df['DSCR'] = (df['PAT'] + df['Depreciation'] + df['Interest']) / (df['Repayment'] + df['Interest'])
-        st.write("**Key Ratios**")
-        st.dataframe(df[['Year', 'DSCR']].style.format(precision=2))
+with t3:
+    st.subheader("📈 Financial Ratios")
+    ratios = pd.DataFrame({
+        "Year": years,
+        "Current Ratio": [df_bs.loc["Current Assets", y] / df_bs.loc["Current Liabilities", y] for y in years],
+        "Debt-Equity": [df_bs.loc["Long Term Loan", y] / df_bs.loc["Net Worth", y] for y in years]
+    }).set_index("Year").transpose()
+    st.dataframe(ratios.style.format("{:.2f}"), use_container_width=True)
 
-    # --- EXCEL EXPORT ---
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, sheet_name='CMA_Data', index=False)
-        workbook = writer.book
-        worksheet = writer.sheets['CMA_Data']
-        header_format = workbook.add_format({'bold': True, 'font_size': 14, 'align': 'center'})
-        worksheet.write('A1', f"Detailed Project Report: {firm_name}", header_format)
-        
-    st.download_button("📗 Download CMA Excel", output.getvalue(), f"DPR_{firm_name}.xlsx")
+# --- EXCEL DOWNLOAD ---
+output = io.BytesIO()
+with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+    df_pl.to_excel(writer, sheet_name='P&L_Account')
+    df_bs.to_excel(writer, sheet_name='Balance_Sheet')
+st.download_button("📗 Download CMA Excel", output.getvalue(), "CMA_Full_Report.xlsx")
