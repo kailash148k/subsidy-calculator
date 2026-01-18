@@ -1,90 +1,76 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from fpdf import FPDF
 
-st.set_page_config(page_title="CMA Engine + Subsidy Search", layout="wide")
-
-# --- DATA: RAJASTHAN ODOP MAPPING ---
+# --- DISTRICT DATA ---
 rajasthan_odop = {
-    "Ajmer": "Marble & Granite", "Alwar": "Automobile Parts", "Banswara": "Mango",
-    "Baran": "Garlic", "Barmer": "Isabgol", "Bharatpur": "Mustard Oil",
-    "Bhilwara": "Textiles", "Bikaner": "Moth Bhujia", "Chittorgarh": "Jaggery",
-    "Churu": "Wood Products", "Dausa": "Stone Carpets", "Dholpur": "Milk Powder",
-    "Dungarpur": "Black Stone", "Hanumangarh": "Guar Gum", "Jaipur": "Blue Pottery",
-    "Jaisalmer": "Yellow Stone", "Jalore": "Granite", "Jhalawar": "Orange",
-    "Jhunjhunu": "Stone Crafts", "Jodhpur": "Furniture", "Karauli": "Sandstone",
-    "Kota": "Coriander", "Nagaur": "Fenugreek", "Pali": "Mehendi",
-    "Pratapgarh": "Garlic", "Rajsamand": "Terracotta", "Sawai Madhopur": "Guava",
-    "Sikar": "Furniture", "Sirohi": "Psyllium", "Sri Ganganagar": "Kinnow",
-    "Tonk": "Namkeen", "Udaipur": "Ivory/Wood Crafts"
+    "Udaipur": "Ivory/Wood Crafts", "Jaipur": "Blue Pottery", "Jodhpur": "Furniture",
+    "Kota": "Coriander", "Ajmer": "Granite", "Bhilwara": "Textiles"
 }
 
-st.title("🏦 Manufacturing CMA & Subsidy Engine")
+st.set_page_config(page_title="MSME Subsidy Search", layout="wide")
+st.title("⚖️ MSME Subsidy & Project Engine")
 
-# --- SIDEBAR: ALL SECTIONS (A - K) ---
+# --- 1. HIGHLIGHTED QUESTIONNAIRE (STRICT SEQUENCE) ---
 with st.sidebar:
-    # --- DISTRICT SEARCH (SECTION K) ---
-    st.header("🔍 District & ODOP Search")
-    selected_district = st.selectbox("Type/Select Your District", list(rajasthan_odop.keys()))
-    odop_product = rajasthan_odop[selected_district]
-    st.info(f"📍 ODOP for {selected_district}: **{odop_product}**")
-    is_odop_unit = st.checkbox("Is this an ODOP unit?")
-
-    # --- PROJECT COST (SECTION A) ---
-    st.header("🏢 Section A: Cost & Funding")
-    capex = st.number_input("Total CAPEX (Machinery, etc.)", value=4000000)
-    wc_req = st.number_input("Working Capital Requirement", value=1000000)
+    st.header("🔍 Eligibility Search")
+    
+    # A & B: State & District
+    state = st.selectbox("A. State", ["Rajasthan", "Other"])
+    district = st.selectbox("B. District", list(rajasthan_odop.keys()))
+    odop_item = rajasthan_odop[district]
+    st.info(f"📍 ODOP for {district}: {odop_item}")
+    
+    # C: Nature of Business
+    sector = st.radio("C. Business Type", ["Manufacturing", "Service"])
+    
+    # D: Project Cost & Loan
+    st.subheader("D. Financials")
+    capex = st.number_input("Total CAPEX (Machinery/Land)", value=4000000)
+    wc_req = st.number_input("Working Capital", value=1000000)
     total_cost = capex + wc_req
+    tenure = st.slider("Loan Tenure (Years)", 1, 7, 7)
     
-    own_pct = st.number_input("Own Contribution (%)", value=10.0)
-    own_amt = total_cost * (own_pct / 100)
-
-    # --- LOAN DETAILS ---
-    st.header("💳 Section A: Loan Details")
-    term_loan_amt = st.number_input("Term Loan Amount", value=3000000)
-    tl_rate = st.number_input("Term Loan Rate (%)", value=10.5) / 100
+    # E: Location
+    loc = st.radio("E. Location", ["Urban", "Rural"])
     
-    # --- SALES ENGINE (SECTION B) ---
-    st.header("📈 Section B: Sales Engine")
-    uom = st.selectbox("Unit of Measurement", ["Numbers (Nos)", "KG", "MT"])
-    max_cap = st.number_input(f"Max Annual Capacity ({uom})", value=50000)
-    price = st.number_input(f"Price per {uom} (₹)", value=200)
+    # F: Category
+    st.subheader("F. Social Profile")
+    gender = st.selectbox("Gender", ["Male", "Female"])
+    social_cat = st.selectbox("Category", ["General", "OBC", "SC", "ST"])
 
-# --- SUBSIDY CALCULATION ENGINE ---
+# --- 2. MULTI-SCHEME ENGINE (INCLUDING AMBEDKAR SCHEME) ---
 results = []
 
-# 1. ODOP Logic
-if is_odop_unit:
-    # Rajasthan ODOP 2024: 25% subsidy capped at 15L
-    odop_benefit = min(total_cost * 0.25, 1500000)
-    results.append({"Scheme": "Rajasthan ODOP 2024", "Benefit": "Margin Money", "Value": odop_benefit})
+# Logic for Ambedkar Scheme (Rajasthan SC/ST Focus)
+if state == "Rajasthan" and (social_cat == "SC" or social_cat == "ST"):
+    # Ambedkar Scheme offers 25% subsidy on first 25L
+    ambedkar_sub = min(total_cost * 0.25, 625000) 
+    # 9% Interest subvention for 7 years
+    ambedkar_int_save = min(total_cost * 0.75, 2500000) * 0.09 * tenure
+    results.append({
+        "Scheme": "Dr. B.R. Ambedkar Scheme",
+        "Benefit": "25% Subsidy + 9% Interest Save",
+        "Value": ambedkar_sub + ambedkar_int_save
+    })
 
-# 2. RIPS 2024 (Rajasthan Interest Subvention)
-rips_rate = 0.08 if is_odop_unit else 0.06
-rips_saving = term_loan_amt * rips_rate * 7
-results.append({"Scheme": "RIPS 2024", "Benefit": "7-Year Interest Saving", "Value": rips_saving})
+# PMEGP Logic (Central)
+pm_rate = 0.35 if (loc == "Rural" or gender == "Female" or social_cat != "General") else 0.15
+pm_benefit = total_cost * pm_rate
+results.append({"Scheme": "PMEGP", "Benefit": f"{pm_rate*100}% Margin Money", "Value": pm_benefit})
 
-# --- VALIDATION ---
-total_funding = own_amt + term_loan_amt
-if is_odop_unit:
-    total_funding += results[0]['Value']
+# ODOP/RIPS Logic
+is_odop = st.checkbox(f"Is your project specifically for {odop_item}?")
+if is_odop:
+    rips_save = total_cost * 0.75 * 0.08 * tenure # 8% Subvention
+    results.append({"Scheme": "RIPS 2024 (ODOP)", "Benefit": "8% Interest Subvention", "Value": rips_save})
 
-# Error Check
-diff = total_cost - total_funding
-if abs(diff) > 10:
-    st.error(f"❌ Funding Mismatch! Cost: ₹{total_cost:,.0f} | Total Funding: ₹{total_funding:,.0f}. Difference: ₹{diff:,.0f}")
+# --- 3. DISPLAY RESULTS ---
+st.subheader("🏁 Eligible Subsidies for your Profile")
+if results:
+    df = pd.DataFrame(results).sort_values(by="Value", ascending=False)
+    st.table(df.style.format({"Value": "₹{:,.0f}"}))
+    
+    # Highlight Best
+    st.success(f"🏆 **Best Scheme for you:** {df.iloc[0]['Scheme']}")
 else:
-    st.success("✅ Funding Balanced with Subsidy")
-
-# --- TABBED RESULTS ---
-tab1, tab2 = st.tabs(["💰 Subsidy Comparison", "📊 7-Year Projections"])
-
-with tab1:
-    st.subheader("Recommended Benefits")
-    df_subsidy = pd.DataFrame(results)
-    st.table(df_subsidy.style.format({"Value": "₹{:,.0f}"}))
-
-with tab2:
-    st.info("The 7-Year P&L and Balance Sheet (including Section I Loan split) will generate here.")
-    # (P&L and BS Logic as defined in our locked blueprint)
+    st.warning("No specific subsidies found for this profile. Checking General Schemes...")
