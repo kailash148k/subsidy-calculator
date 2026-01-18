@@ -1,34 +1,35 @@
-# --- E. PM Vishwakarma (Expanded) ---
-if sector == "Traditional Artisan":
-    vishwa_grant = 15000  # Toolkit grant
-    training_stipend = 500 * 15  # Approx 15 days training
-    # Loan benefit: 5% vs Market 12%
-    vishwa_interest_saving = min(cost, 300000) * 0.07 * 5 
+results = []
+
+# 1. ODOP Benefit (Rajasthan 2024 Policy)
+if is_odop_unit:
+    # 25% for micro units, capped at 15L
+    odop_benefit = min(total_project_cost * 0.25, 1500000)
     results.append({
-        "Scheme": "PM Vishwakarma", 
-        "Benefit Type": "Grant + Interest Subvention", 
-        "Value": vishwa_grant + training_stipend + vishwa_interest_saving, 
-        "Details": "Toolkit + ₹500/day Stipend + 5% Interest Loan"
+        "Scheme": "Rajasthan ODOP 2024",
+        "Benefit": "Margin Money Grant",
+        "Value": odop_benefit,
+        "Detail": "25% Grant on ODOP Project Cost"
     })
 
-# --- F. ODOP (One District One Product) ---
-is_odop = st.sidebar.checkbox("Is this an ODOP product?")
-if is_odop:
-    odop_sub = min(cost * 0.25, 2000000) # Assuming 25% capped at 20L
+# 2. PM Vishwakarma (Full Benefits)
+if is_vishwakarma:
+    vishwa_toolkit = 15000 # One-time
+    # Collateral-free loan benefit (5% int vs 12% market)
+    vishwa_int_saving = min(total_project_cost, 300000) * 0.07 * 5 
     results.append({
-        "Scheme": "ODOP Subsidy", 
-        "Benefit Type": "Machinery Grant", 
-        "Value": odop_sub, 
-        "Details": "25% Subsidy for District-Specific Products"
+        "Scheme": "PM Vishwakarma",
+        "Benefit": "Toolkit + Interest Subvention",
+        "Value": vishwa_toolkit + vishwa_int_saving,
+        "Detail": "₹15,000 Toolkit + 5% Subsidized Interest"
     })
 
-# --- G. Stand-Up India (SC/ST/Women) ---
-if is_special and cost >= 1000000:
-    # Logic for 15% margin money assistance
-    standup_benefit = cost * 0.15
+# 3. Additional Rajasthan Interest Subvention (Over & Above RIPS 2024)
+# ODOP units get an additional 2% subvention over the base RIPS rate
+if is_odop_unit:
+    additional_rips = term_loan_amt * 0.02 * 7 # 7 Years
     results.append({
-        "Scheme": "Stand-Up India", 
-        "Benefit Type": "Margin Money Support", 
-        "Value": standup_benefit, 
-        "Details": "15% Composite Loan Subsidy"
+        "Scheme": "RIPS 2024 (Additional)",
+        "Benefit": "Interest Subvention",
+        "Value": additional_rips,
+        "Detail": "Extra 2% Interest Saving for ODOP Units"
     })
