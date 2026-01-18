@@ -4,57 +4,66 @@ import numpy as np
 import io
 from datetime import datetime
 
-st.set_page_config(page_title="Professional CMA & Balance Sheet", layout="wide")
-st.title("🏦 Full Manufacturing P&L and Balance Sheet Engine")
+st.set_page_config(page_title="Manufacturing DPR - Sales Engine", layout="wide")
+st.title("🏦 Manufacturing P&L and Balance Sheet Engine")
 
 # --- 1. DETAILED DATA INPUT AREA ---
 with st.sidebar:
-    st.header("🏢 Project Cost Bifurcation")
-    capex_investment = st.number_input("Total CAPEX (Machinery, Building, etc.)", value=4000000)
+    st.header("🏢 Project Cost & Funding")
+    capex_investment = st.number_input("Total CAPEX (Machinery, etc.)", value=4000000)
     working_capital_margin = st.number_input("Working Capital Requirement", value=1000000)
     total_project_cost = capex_investment + working_capital_margin
-    st.info(f"Total Project Cost: ₹{total_project_cost:,.0f}")
     
     own_contribution_pct = st.number_input("Own Contribution (%)", value=25.0)
     own_capital_amt = total_project_cost * (own_contribution_pct / 100)
-    
-    st.header("💳 Term Loan Details")
-    term_loan_amt = st.number_input("Term Loan Amount", value=3000000)
-    term_rate = st.number_input("Term Loan Interest Rate (%)", value=10.5) / 100
-    term_tenure_months = st.number_input("Tenure in Months (Total)", value=84)
-    moratorium_period = st.number_input("Moratorium Period (Months)", value=6)
-    
-    st.header("🏦 Working Capital (CC) Details")
-    cc_limit = st.number_input("CC Limit Amount", value=500000)
-    cc_rate = st.number_input("CC Interest Rate (%)", value=11.5) / 100
-    cc_utilization = st.number_input("Avg. CC Utilization (%)", value=70.0) / 100
+    term_loan_amt = total_project_cost - own_capital_amt
 
-    st.header("⚙️ Operations")
-    max_annual_sales = st.number_input("Max Annual Sales Revenue (100% Capacity)", value=8000000)
-    rm_cost_pct = st.number_input("Raw Material Cost (%)", value=55.0) / 100
-    util_y1 = st.number_input("Year 1 Utilization (%)", value=60.0) / 100
+    st.header("📈 Sales & Production Engine")
+    unit_type = st.selectbox("Unit of Measurement", ["KG", "Metric Ton (MT)", "Numbers (Nos)", "Units"])
+    max_capacity = st.number_input(f"Max Annual Production Capacity ({unit_type})", value=50000)
+    
+    # 4th Ask: Sales projection Unit x Rate
+    sale_price_per_unit = st.number_input(f"Selling Price per {unit_type} (₹)", value=200)
+    annual_growth_pct = st.number_input("Annual Sales Growth (%)", value=10.0) / 100
+    util_yr1 = st.number_input("Year 1 Capacity Utilization (%)", value=50.0) / 100
+
+    st.header("💳 Term Loan Details")
+    term_rate = st.number_input("Term Loan Rate (%)", value=10.5) / 100
+    term_tenure_months = st.number_input("Tenure (Months)", value=84)
+    moratorium_period = st.number_input("Moratorium (Months)", value=6)
+    
+    st.header("🏦 Working Capital (CC)")
+    cc_limit = st.number_input("CC Limit Amount", value=500000)
+    cc_rate = st.number_input("CC Rate (%)", value=11.5) / 100
+    cc_utilization = st.number_input("Avg. CC Utilization (%)", value=70.0) / 100
 
 # --- 2. CALCULATION ENGINE (7 YEARS) ---
 years = [f"Year {i}" for i in range(1, 8)]
 pl_data = []
 bs_data = []
 
-# Loan Repayment Calculation
+# Loan Repayment Logic
 repayment_months = term_tenure_months - moratorium_period
 annual_principal_repay = term_loan_amt / (repayment_months / 12) if repayment_months > 0 else 0
 curr_term_loan = term_loan_amt
 
 for i in range(7):
-    # --- P&L ACCOUNT ---
-    util = min(0.95, util_y1 + (i * 0.05))
-    sales = max_annual_sales * util * (1.08**i) # 8% Growth
-    cogs = sales * rm_cost_pct
-    fixed_overhead = 600000 * (1.07**i) # Salary/Rent/Admin
+    # --- P&L: SALES CALCULATION (Module 4) ---
+    # Capacity increases by 5% yearly or stays at 95% cap
+    util = min(0.95, util_yr1 + (i * 0.05)) 
+    current_year_units = max_capacity * util
     
-    ebitda = sales - cogs - fixed_overhead
-    depreciation = capex_investment * 0.10 # 10% SLM
+    # Revenue = Units x Price x Growth
+    current_price = sale_price_per_unit * (1 + annual_growth_pct)**i
+    total_sales_revenue = current_year_units * current_price
     
-    # Interest Bifurcation
+    # Basic Expenses (To be expanded in next steps)
+    rm_cost = total_sales_revenue * 0.55 # Placeholder 55%
+    other_exp = 500000 * (1.07**i)
+    
+    ebitda = total_sales_revenue - rm_cost - other_exp
+    depreciation = capex_investment * 0.10
+    
     interest_term = curr_term_loan * term_rate
     interest_cc = (cc_limit * cc_utilization) * cc_rate
     total_interest = interest_term + interest_cc
@@ -64,23 +73,21 @@ for i in range(7):
     pat = pbt - tax
     
     pl_data.append({
-        "Particulars": years[i], "Gross Sales": sales, "Direct Expenses (RM)": cogs,
-        "Operating Expenses": fixed_overhead, "EBITDA": ebitda, 
-        "Interest (Term+CC)": total_interest, "Depreciation": depreciation, 
-        "PBT": pbt, "Tax": tax, "PAT": pat
+        "Particulars": years[i], 
+        "Capacity Utilization (%)": util * 100,
+        "Production Units": current_year_units,
+        "Selling Price": current_price,
+        "Gross Sales Revenue": total_sales_revenue, 
+        "EBITDA": ebitda, "Interest": total_interest, "PAT": pat
     })
 
     # --- BALANCE SHEET ---
-    # Assets
-    stock = (cogs / 365) * 30 
-    debtors = (sales / 365) * 45 
-    cash_bal = pat * 0.05
-    curr_assets = stock + debtors + cash_bal
+    stock = (rm_cost / 365) * 30 
+    debtors = (total_sales_revenue / 365) * 45 
+    curr_assets = stock + debtors + (pat * 0.05)
     net_fixed_assets = max(0, capex_investment - (depreciation * (i+1)))
     
-    # Liabilities
-    creditors = (cogs / 365) * 30
-    # Current Portion of Long Term Debt (CPLTD) for Ratio calculation
+    creditors = (rm_cost / 365) * 30
     cpltd = annual_principal_repay if i >= (moratorium_period/12) else 0
     curr_liab = creditors + cpltd + (cc_limit * cc_utilization)
     
@@ -91,9 +98,7 @@ for i in range(7):
         "Year": years[i], "Net Fixed Assets": net_fixed_assets,
         "Current Assets": curr_assets, "Total Assets": net_fixed_assets + curr_assets,
         "Net Worth": own_capital_amt + (pat * (i+1)), 
-        "Term Loan (Long Term)": max(0, curr_term_loan),
-        "Current Liabilities": curr_liab, 
-        "Total Liabilities": (own_capital_amt + (pat * (i+1))) + max(0, curr_term_loan) + curr_liab
+        "Term Loan": max(0, curr_term_loan), "Current Liabilities": curr_liab
     })
 
 # --- 3. TABBED DISPLAY (LOCKED FORMAT) ---
@@ -103,6 +108,7 @@ df_bs = pd.DataFrame(bs_data).set_index("Year").transpose()
 tab1, tab2, tab3 = st.tabs(["📊 Profit & Loss Account", "⚖️ Balance Sheet", "📈 Ratio Analysis"])
 
 with tab1:
+    st.subheader("Sales & Production Detailed P&L")
     st.dataframe(df_pl.style.format("₹{:,.0f}"), use_container_width=True)
 
 with tab2:
@@ -111,15 +117,7 @@ with tab2:
 with tab3:
     ratios = pd.DataFrame({
         "Year": years,
-        "Current Ratio": [df_bs.loc["Current Assets", y] / df_bs.loc["Current Liabilities", y] for y in years],
-        "DSCR": [(df_pl.loc["PAT", y] + df_pl.loc["Depreciation", y] + df_pl.loc["Interest (Term+CC)", y]) / 
-                 (annual_principal_repay + df_pl.loc["Interest (Term+CC)", y]) for y in years]
+        "DSCR": [(df_pl.loc["PAT", y] + depreciation + df_pl.loc["Interest", y]) / 
+                 (annual_principal_repay + df_pl.loc["Interest", y]) for y in years]
     }).set_index("Year").transpose()
     st.dataframe(ratios.style.format("{:.2f}"), use_container_width=True)
-
-# Excel Export
-output = io.BytesIO()
-with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-    df_pl.to_excel(writer, sheet_name='P&L_Account')
-    df_bs.to_excel(writer, sheet_name='Balance_Sheet')
-st.download_button("📗 Download CMA Excel", output.getvalue(), "CMA_Detailed_Report.xlsx")
