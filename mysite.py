@@ -36,7 +36,7 @@ with st.sidebar:
     capex = st.number_input("CAPEX (Plant/Machinery/Building)", value=2000000)
     wc_req = st.number_input("Working Capital", value=500000)
     total_cost = capex + wc_req
-    land_building = st.number_input("Land & Building Portion", value=0)
+    land_building = st.number_input("Land & Building Portion (Included in CAPEX)", value=0)
     
     loan_amt = total_cost * 0.75 
     tenure = st.slider("Loan Tenure (Years)", 1, 7, 7)
@@ -53,51 +53,51 @@ results = []
 
 # --- VYUPY Logic (Points A-I) ---
 if state == "Rajasthan" and 18 <= age <= 45:
-    # Point F: WC cap 30% of project cost
-    eligible_wc = min(wc_req, total_cost * 0.30)
-    # Point G: 10% Own Contribution
-    vyupy_loan = (capex + eligible_wc) * 0.90
+    eligible_wc = min(wc_req, total_cost * 0.30) # Point F
+    vyupy_loan = (capex + eligible_wc) * 0.90 # Point G
     
-    # Point A & B: Tiered Interest Subvention
     if vyupy_loan <= 10000000:
-        v_rate = 0.08
+        v_rate = 0.08 # Point A
     elif vyupy_loan <= 20000000:
-        v_rate = 0.07
+        v_rate = 0.07 # Point B
     else: v_rate = 0.0
     
-    # Point C: 1% Addition for Female/SC/ST
     if gender == "Female" or social_cat in ["SC", "ST"]:
-        v_rate += 0.01
+        v_rate += 0.01 # Point C
 
-    # Point D: 5 Year Limit for Interest Subvention
-    vyupy_int_benefit = vyupy_loan * v_rate * 5
-    # Point H: 25% Capex Subsidy capped at 5L
-    vyupy_capex_sub = min(total_cost * 0.25, 500000)
+    vyupy_int_benefit = vyupy_loan * v_rate * 5 # Point D (5 Yrs)
+    vyupy_capex_sub = min(total_cost * 0.25, 500000) # Point H
     
-    # Point I Check (25% Cap for Land/Building)
-    if land_building <= (total_cost * 0.25):
-        results.append({"Scheme": "VYUPY", "Benefit": f"Capex Sub + {v_rate*100}% Int (5 Yrs)", "Value": vyupy_int_benefit + vyupy_capex_sub})
+    if land_building <= (total_cost * 0.25): # Point I
+        results.append({
+            "Scheme": "VYUPY", 
+            "Benefit": f"Capex Sub + {v_rate*100:.0f}% Int (5 Yrs)", # Fixed Precision Error
+            "Value": vyupy_int_benefit + vyupy_capex_sub
+        })
     else:
         st.sidebar.error("❌ VYUPY Ineligible: Land/Building > 25%")
 
 # --- Ambedkar Scheme ---
 if state == "Rajasthan" and social_cat in ["SC", "ST"]:
-    results.append({"Scheme": "Ambedkar Scheme", "Benefit": "25% Sub + 9% Int Save", "Value": min(total_cost * 0.25, 625000) + (loan_amt * 0.09 * tenure)})
+    amb_sub = min(total_cost * 0.25, 625000)
+    amb_int = min(loan_amt, 2500000) * 0.09 * tenure
+    results.append({"Scheme": "Ambedkar Scheme", "Benefit": "25% Sub + 9% Int Save", "Value": amb_sub + amb_int})
 
 # --- PMEGP ---
 p_rate = 0.35 if (loc == "Rural" or gender == "Female" or social_cat != "General") else 0.15
-results.append({"Scheme": "PMEGP", "Benefit": f"{p_rate*100}% Margin Money", "Value": total_cost * p_rate})
+results.append({"Scheme": "PMEGP", "Benefit": f"{p_rate*100:.0f}% Margin Money", "Value": total_cost * p_rate})
 
 # --- RIPS 2024 ---
 if state == "Rajasthan":
     is_odop = st.checkbox(f"Is this specifically for {odop_item}?")
     r_rate = 0.08 if (is_odop or gender == "Female" or social_cat != "General") else 0.06
-    results.append({"Scheme": "RIPS 2024", "Benefit": f"{r_rate*100}% Interest Saving", "Value": loan_amt * r_rate * tenure})
+    results.append({"Scheme": "RIPS 2024", "Benefit": f"{r_rate*100:.0f}% Interest Saving", "Value": loan_amt * r_rate * tenure})
 
 # --- DISPLAY ---
 st.subheader("🏁 Comparative Analysis")
 if results:
     df = pd.DataFrame(results).sort_values(by="Value", ascending=False)
-    st.table(df.style.format({"Value": "₹{:,.0f}"}))
+    st.table(df.style.format({"Value": "₹{:,.0f}"})) # Formats value with comma and no decimals
+    st.success(f"🏆 Best Financial Benefit: {df.iloc[0]['Scheme']}")
 else:
-    st.error("No eligible schemes found.")
+    st.error("No eligible schemes found for this profile.")
