@@ -33,62 +33,59 @@ with st.sidebar:
     state = st.selectbox("State", ["Rajasthan", "Other"])
     district = st.selectbox("District", list(rajasthan_odop.keys()))
     odop_item = rajasthan_odop[district]
-    st.info(f"📍 Official ODOP: **{odop_item}**")
     
     sector = st.selectbox("Sector", ["Manufacturing", "Service", "Food Processing"])
     
     st.subheader("D. Financials")
-    capex = st.number_input("Total CAPEX", value=2000000)
-    wc_req = st.number_input("Total WC Requirement", value=500000)
-    total_cost = capex + wc_req
+    total_cost = st.number_input("Total Project Cost", value=2500000)
     land_building = st.number_input("Land & Building Portion", value=0)
     
     req_term_loan = st.number_input("Required Term Loan", value=15000000) # 1.5 Cr
-    req_wc_loan = st.number_input("Required WC Loan", value=3000000)
+    req_wc_loan = st.number_input("Required Working Capital Loan", value=3000000)
     
-    tenure = st.slider("Tenure (Years)", 1, 7, 7)
+    # This is the loan tenure for RIPS/Ambedkar
+    loan_tenure = st.slider("Total Loan Tenure (Years)", 1, 7, 7)
     loc = st.radio("Location", ["Urban", "Rural"])
     
     st.subheader("F. Social Profile")
     gender = st.selectbox("Gender", ["Male", "Female"])
     social_cat = st.selectbox("Category", ["General", "OBC", "SC", "ST"])
-    edu_8th = st.checkbox("Passed 8th Standard?")
 
 # --- 3. SCHEME ENGINE ---
 results = []
 
-# --- VYUPY Compliance Logic (Corrected Rates) ---
+# --- VYUPY Logic (Strictly 5 Years) ---
 if state == "Rajasthan":
     # WC capping at 30% of project cost
     eligible_wc_loan = min(req_wc_loan, total_cost * 0.30)
-    # Total loan capped at 2 Cr
+    # Total loan capped at 2 Cr for interest benefit
     vyupy_loan_capped = min(req_term_loan + eligible_wc_loan, 20000000)
     
-    # --- CORRECTED INTEREST RATE LOGIC ---
+    # Slab-based Rates
     if vyupy_loan_capped <= 10000000:
-        v_int_rate = 8  # 8% for loans up to 1 Cr
+        v_base_rate = 8 
     else:
-        v_int_rate = 7  # Base rate drops to 7% for 1Cr - 2Cr
+        v_base_rate = 7
         
-    # Additional 1% for Special Categories (including Rural Male)
-    is_vyupy_special = (gender == "Female" or social_cat in ["SC", "ST"] or loc == "Rural")
-    if is_vyupy_special and vyupy_loan_capped > 10000000:
-        v_int_rate += 1  # Becomes 8% (Not 9%)
+    # Special Category Bonus (+1%)
+    if (gender == "Female" or social_cat in ["SC", "ST"] or loc == "Rural"):
+        v_base_rate += 1
 
-    vyupy_int_benefit = vyupy_loan_capped * (v_int_rate / 100) * 5 # First 5 years
-    vyupy_grant = min(vyupy_loan_capped * 0.25, 500000) # 25% capped at 5L
+    # FORMULA: Amount * Rate * 5 Years (Fixed Policy Tenure)
+    vyupy_int_benefit = vyupy_loan_capped * (v_base_rate / 100) * 5 
+    vyupy_grant = min(vyupy_loan_capped * 0.25, 500000)
     
     if land_building <= (total_cost * 0.25):
         results.append({
             "Scheme": "VYUPY",
-            "Capital %": "25% (Grant)",
+            "Benefit Tenure": "5 Years",
             "Capital Subsidy": vyupy_grant,
-            "Interest %": f"{v_int_rate}%",
+            "Interest %": f"{v_base_rate}%",
             "Interest Subsidy": vyupy_int_benefit,
             "Total Benefit": vyupy_grant + vyupy_int_benefit
         })
 
-# --- PMEGP Logic ---
+# --- PMEGP Logic (Upfront - No Tenure) ---
 if is_new_project == "New Unit" and applicant_type == "Individual Entrepreneur" and not has_other_subsidy:
     is_special = (gender == "Female" or social_cat != "General" or loc == "Rural")
     p_rate = (35 if loc == "Rural" else 25) if is_special else (25 if loc == "Rural" else 15)
@@ -98,22 +95,24 @@ if is_new_project == "New Unit" and applicant_type == "Individual Entrepreneur" 
     
     results.append({
         "Scheme": "PMEGP",
-        "Capital %": f"{p_rate}%",
+        "Benefit Tenure": "Upfront",
         "Capital Subsidy": pmegp_sub,
         "Interest %": "0%",
         "Interest Subsidy": 0,
         "Total Benefit": pmegp_sub
     })
 
-# --- RIPS 2024 / ODOP ---
+# --- RIPS 2024 / ODOP (Full Tenure) ---
 if state == "Rajasthan":
     is_odop = st.checkbox(f"Is this specifically for {odop_item}?")
     r_rate = 8 if (is_odop or gender == "Female" or social_cat != "General") else 6
-    rips_int = (req_term_loan + req_wc_loan) * (r_rate / 100) * tenure
+    
+    # FORMULA: Amount * Rate * User-selected Loan Tenure
+    rips_int = (req_term_loan + req_wc_loan) * (r_rate / 100) * loan_tenure
     
     results.append({
         "Scheme": "RIPS 2024",
-        "Capital %": "0%",
+        "Benefit Tenure": f"{loan_tenure} Years",
         "Capital Subsidy": 0,
         "Interest %": f"{r_rate}%",
         "Interest Subsidy": rips_int,
@@ -124,11 +123,14 @@ if state == "Rajasthan":
 st.subheader("🏁 Comparative Analysis")
 if results:
     df = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
+    # Reorder columns to include Benefit Tenure
+    df = df[["Scheme", "Benefit Tenure", "Interest %", "Capital Subsidy", "Interest Subsidy", "Total Benefit"]]
+    
     st.table(df.style.format({
         "Capital Subsidy": "₹{:,.0f}",
         "Interest Subsidy": "₹{:,.0f}",
         "Total Benefit": "₹{:,.0f}"
     }))
+    
+    st.info("💡 Note: VYUPY interest benefit is capped at 5 years by policy, while RIPS follows your loan tenure.")
     st.success(f"🏆 Best Financial Benefit: {df.iloc[0]['Scheme']}")
-else:
-    st.error("No eligible schemes found.")
