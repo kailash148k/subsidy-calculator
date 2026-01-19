@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 
 # --- 1. FULL RAJASTHAN ODOP DATA (41 Districts) ---
-# Source: odop product list of rajasthan 03-07-2025.pdf 
 rajasthan_odop = {
     "Ajmer": "Granite and Marble Products", "Alwar": "Automobiles Parts", "Balotra": "Textile Products",
     "Banswara": "Marble Products", "Baran": "Garlic Products", "Barmer": "Kasheedakari",
@@ -26,6 +25,13 @@ st.title("⚖️ Rajasthan MSME Subsidy Comparison Tool")
 # --- 2. QUESTIONNAIRE (A-F) ---
 with st.sidebar:
     st.header("🔍 Eligibility Profile")
+    
+    # Core Compliance Inputs
+    is_new_project = st.radio("Project Status", ["New Unit", "Existing Unit"], help="PMEGP is for New Units only.")
+    applicant_type = st.radio("Applicant Category", ["Individual Entrepreneur", "Non-Individual (SHG/Trust/Co-op)"], help="PMEGP focus: Individual Entrepreneurs.")
+    has_other_subsidy = st.checkbox("Have you ever availed other Govt. Subsidies?")
+    
+    st.markdown("---")
     state = st.selectbox("A. State", ["Rajasthan", "Other"])
     district = st.selectbox("B. District", list(rajasthan_odop.keys()))
     odop_item = rajasthan_odop[district]
@@ -38,7 +44,6 @@ with st.sidebar:
     capex = st.number_input("Total CAPEX (Machinery/Building)", value=2000000)
     wc_req = st.number_input("Total Working Capital (WC) Requirement", value=500000)
     total_cost = capex + wc_req
-    # Point I: Land/Building must be <= 25% of project cost
     land_building = st.number_input("Land & Building Portion (Included in CAPEX)", value=0)
     
     st.markdown("---")
@@ -53,85 +58,73 @@ with st.sidebar:
     age = st.number_input("Age of Entrepreneur", value=25)
     gender = st.selectbox("Gender", ["Male", "Female"])
     social_cat = st.selectbox("Category", ["General", "OBC", "SC", "ST"])
+    edu_8th = st.checkbox("Passed 8th Standard?")
 
 # --- 3. THE EXPANDED SCHEME ENGINE ---
 results = []
 
-# --- VYUPY Logic (Points A-I) ---
-if state == "Rajasthan" and 18 <= age <= 45: # Age Capping
-    # Point F: WC Loan capped at 30% of total project cost
-    eligible_wc_loan = min(req_wc_loan, total_cost * 0.30)
-    
-    # Point A, B & Max Cap: Subsidy calculated on loan capped at 2 Crores
-    vyupy_eligible_loan = min(req_term_loan + eligible_wc_loan, 20000000)
-    
-    if vyupy_eligible_loan <= 10000000:
-        v_rate = 0.08  # 8% up to 1Cr
-    else:
-        v_rate = 0.07  # 7% for 1Cr to 2Cr
-        
-    # Point C: 1% Addition for Female/SC/ST/Disabled
-    if gender == "Female" or social_cat in ["SC", "ST"]:
-        v_rate += 0.01
+# --- PMEGP (Central) ---
+# Strictly for NEW projects and INDIVIDUAL entrepreneurs
+if is_new_project == "New Unit" and applicant_type == "Individual Entrepreneur" and not has_other_subsidy:
+    # Educational check
+    edu_eligible = True
+    if sector == "Manufacturing" and total_cost > 1000000 and not edu_8th: edu_eligible = False
+    if sector == "Service" and total_cost > 500000 and not edu_8th: edu_eligible = False
 
-    # Point D: Interest subvention for 1st FIVE YEARS only
-    vyupy_int_benefit = vyupy_eligible_loan * v_rate * 5
+    if edu_eligible:
+        is_special = (gender == "Female" or social_cat != "General" or loc == "Rural")
+        # Subsidy rates: General (15-25%), Special (25-35%)
+        if loc == "Rural":
+            p_rate_val = 35 if is_special else 25
+        else:
+            p_rate_val = 25 if is_special else 15
+            
+        max_cost = 5000000 if sector == "Manufacturing" else 2000000
+        pmegp_sub = min(total_cost, max_cost) * (p_rate_val / 100)
+        
+        results.append({
+            "Scheme": "PMEGP (Central)",
+            "Capital %": f"{p_rate_val}%",
+            "Capital Subsidy": pmegp_sub,
+            "Interest %": "0%",
+            "Interest Subsidy": 0,
+            "Total Combined Benefit": pmegp_sub
+        })
+
+# --- VYUPY Logic (Rajasthan) ---
+if state == "Rajasthan" and 18 <= age <= 45:
+    v_int_rate = 8
+    # 1% Addition for Special Category on loans > 1Cr
+    if (gender == "Female" or social_cat in ["SC", "ST"]) and actual_total_loan > 10000000:
+        v_int_rate = 9
+
+    vyupy_int_benefit = actual_total_loan * (v_int_rate / 100) * 5
+    vyupy_capex_sub = min(actual_total_loan * 0.25, 500000)
     
-    # Point H: Additional Capex Subsidy (25% capped at 5 Lakh)
-    vyupy_capex_sub = min(total_cost * 0.25, 500000)
-    
-    # Point I Check: Land/Building <= 25%
     if land_building <= (total_cost * 0.25):
         results.append({
-            "Scheme": "VYUPY", 
+            "Scheme": "VYUPY",
+            "Capital %": "25% (Max 5L)",
             "Capital Subsidy": vyupy_capex_sub,
+            "Interest %": f"{v_int_rate}%",
             "Interest Subsidy": vyupy_int_benefit,
             "Total Combined Benefit": vyupy_capex_sub + vyupy_int_benefit
         })
-    else:
-        st.sidebar.error("❌ VYUPY Ineligible: Land/Building > 25%")
-
-# --- Ambedkar Scheme (SC/ST Rajasthan) ---
-if state == "Rajasthan" and social_cat in ["SC", "ST"]:
-    amb_sub = min(total_cost * 0.25, 625000)
-    amb_int = min(actual_total_loan, 2500000) * 0.09 * tenure
-    results.append({
-        "Scheme": "Ambedkar Scheme", 
-        "Capital Subsidy": amb_sub,
-        "Interest Subsidy": amb_int,
-        "Total Combined Benefit": amb_sub + amb_int
-    })
-
-# --- PMEGP (Central) ---
-p_rate = 0.35 if (loc == "Rural" or gender == "Female" or social_cat != "General") else 0.15
-pmegp_sub = total_cost * p_rate
-results.append({
-    "Scheme": "PMEGP", 
-    "Capital Subsidy": pmegp_sub,
-    "Interest Subsidy": 0,
-    "Total Combined Benefit": pmegp_sub
-})
 
 # --- RIPS 2024 / ODOP (Rajasthan) ---
 if state == "Rajasthan":
     is_odop = st.checkbox(f"Is this specifically for {odop_item}?")
-    r_rate = 0.08 if (is_odop or gender == "Female" or social_cat != "General") else 0.06
-    rips_int = actual_total_loan * r_rate * tenure
+    # Base 6% + 2% Additional for ODOP/Special Category
+    r_rate_val = 8 if (is_odop or gender == "Female" or social_cat != "General") else 6
+    rips_int = actual_total_loan * (r_rate_val / 100) * tenure
+    
     results.append({
-        "Scheme": "RIPS 2024", 
+        "Scheme": "RIPS 2024",
+        "Capital %": "0%",
         "Capital Subsidy": 0,
+        "Interest %": f"{r_rate_val}%",
         "Interest Subsidy": rips_int,
         "Total Combined Benefit": rips_int
-    })
-
-# --- PMFME (Food Processing) ---
-if sector == "Food Processing":
-    pmfme_sub = min(total_cost * 0.35, 1000000)
-    results.append({
-        "Scheme": "PMFME", 
-        "Capital Subsidy": pmfme_sub,
-        "Interest Subsidy": 0,
-        "Total Combined Benefit": pmfme_sub
     })
 
 # --- 4. COMPARISON TABLE ---
@@ -139,7 +132,9 @@ st.subheader("🏁 Comparative Analysis of Subsidies")
 if results:
     df = pd.DataFrame(results).sort_values(by="Total Combined Benefit", ascending=False)
     
-    # Currency formatting for all numeric columns
+    # Reorder for clarity
+    df = df[["Scheme", "Capital %", "Capital Subsidy", "Interest %", "Interest Subsidy", "Total Combined Benefit"]]
+    
     st.table(df.style.format({
         "Capital Subsidy": "₹{:,.0f}",
         "Interest Subsidy": "₹{:,.0f}",
@@ -148,4 +143,4 @@ if results:
     
     st.success(f"🏆 Best Financial Benefit: {df.iloc[0]['Scheme']}")
 else:
-    st.error("No eligible schemes found for this profile.")
+    st.error("No eligible schemes found for this profile. (PMEGP requires New Unit & Individual Applicant)")
