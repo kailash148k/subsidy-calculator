@@ -1,98 +1,97 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="PMEGP Official DPR Generator", layout="wide")
 
-# --- 2. DATA INPUT (Matches your DataSheet.csv) ---
+# --- 2. SIDEBAR: APPLICANT DATA (Based on k1.pdf & k2.pdf) ---
 with st.sidebar:
     st.header("📋 Applicant Profile")
-    beneficiary_name = st.text_input("Name of Beneficiary", "SMITA SINGH")
-    father_husband = st.text_input("Father's/Spouse's Name", "SUNIL BORANA")
-    agency = st.selectbox("Sponsoring Agency", ["DIC", "KVIC", "KVIB"], index=0)
+    beneficiary_name = st.text_input("1.0 Name of Beneficiary", "SMITA SINGH")
+    father_husband = st.text_input("3.0 Father's/Spouse's Name", "SOURAV SINGH")
+    address = st.text_area("4.0 Unit Address", "F-1 GOKUL BLISS BHUWANA, UDAIPUR")
+    district = st.text_input("District", "UDAIPUR")
+    
+    st.markdown("---")
+    industry_type = st.radio("Sector", ["Manufacturing", "Service"])
+    activity = st.text_input("5.0 Proposed Activity", "ORTHODONTIC AND IMPLANT CENTRE")
     
     st.markdown("---")
     social_cat = st.selectbox("Social Category", ["General", "OBC", "SC", "ST", "Minority"])
     gender = st.selectbox("Gender", ["Male", "Female"])
     location = st.radio("Unit Location", ["Rural", "Urban"])
-    
-    # Qualification check for PMEGP eligibility
-    qualification = st.selectbox("Qualification", ["Under 8th", "8th Pass", "10th Pass", "Graduate"])
-    
-    st.markdown("---")
-    industry_type = st.radio("Sector", ["Manufacturing", "Service"])
-    project_name = st.text_input("Project Name", "TENT HOUSE SERVICES")
 
-# --- 3. FINANCIAL INPUTS (Matches Project_Report.csv) ---
-st.header(f"📊 Project Report for {project_name}")
+# --- 3. FINANCIAL INPUTS (Based on k2.pdf) ---
+st.header(f"🏭 Detailed Project Report: {activity}")
 
 col1, col2 = st.columns(2)
 with col1:
-    st.subheader("I. Project Cost")
-    lb_cost = st.number_input("Land & Building / Shed", value=300000)
-    pm_cost = st.number_input("Plant & Machinery / Equipment", value=1500000)
-    furn_cost = st.number_input("Furniture & Fixtures", value=20000)
-    wc_req = st.number_input("Working Capital (1 Cycle)", value=180000)
-    total_cost = lb_cost + pm_cost + furn_cost + wc_req
+    st.subheader("3.0 Cost of Project")
+    lb_cost = st.number_input("a. Workshed / Building", value=0)
+    pm_cost = st.number_input("b. Plant & Machinery (CBCT System etc.)", value=3200000)
+    furn_cost = st.number_input("c. Furniture & Fixtures", value=200000)
+    pre_op = st.number_input("d. Preliminary & Pre-operative", value=0)
+    wc_loan = st.number_input("Working Capital Loan", value=190000)
+    total_project_cost = lb_cost + pm_cost + furn_cost + pre_op + wc_loan
 
 with col2:
-    st.subheader("II. Means of Finance")
-    # Official Contribution Logic
+    st.subheader("7.0 Means of Finance")
+    # PMEGP Contribution Logic [cite: 81, 82]
     is_special = (gender == "Female" or social_cat != "General" or location == "Rural")
     own_cont_pct = 0.05 if is_special else 0.10
-    own_cont_amt = total_cost * own_cont_pct
+    own_cont_amt = total_project_cost * own_cont_pct
     
-    bank_loan = total_cost - own_cont_amt
-    st.metric("Total Project Cost", f"₹{total_cost:,.0f}")
-    st.metric(f"Own Contribution ({int(own_cont_pct*100)}%)", f"₹{own_cont_amt:,.0f}")
-    st.metric("Bank Loan (Term + WC)", f"₹{bank_loan:,.0f}")
+    # KVIC Margin Money (Subsidy) Logic [cite: 88, 89]
+    if location == "Rural":
+        sub_rate = 35 if is_special else 25
+    else:
+        sub_rate = 25 if is_special else 15
+    
+    margin_money = (total_project_cost - lb_cost) * (sub_rate / 100)
+    term_loan = total_project_cost - own_cont_amt - wc_loan
 
-# --- 4. REPORT CONTENT (Matches smita.xls Text Sections) ---
+    st.info(f"Own Contribution: ₹{own_cont_amt:,.0f}")
+    st.info(f"Term Loan: ₹{term_loan:,.0f}")
+    st.success(f"Expected Subsidy (Margin Money): ₹{margin_money:,.0f}")
+
+# --- 4. 7-YEAR PROJECTED SUMMARY (Based on k3.pdf, k5.pdf & k6.pdf) ---
 st.markdown("---")
-st.subheader("📝 Descriptive Sections for DPR")
+st.subheader("📈 Financial Projections (7-Year Summary)")
 
-col_a, col_b = st.columns(2)
-with col_a:
-    about_me = st.text_area("About the Beneficiary", 
-        f"The Proprietor {beneficiary_name} is a {gender} candidate belonging to {social_cat} category...")
-with col_b:
-    market_potential = st.text_area("Market Potential", 
-        "Keeping in view the present demand in the local area, the project has good potential...")
+# Mock Data Generation based on k5.pdf & k6.pdf ratios
+years = [f"Year {i}" for i in range(1, 8)]
+data = {
+    "Sales / Receipts": [6300000, 6825000, 7350000, 7875000, 8400000, 8925000, 9450000],
+    "Net Profit": [1168650, 1435548, 1692321, 1940407, 2181024, 2415203, 2643815],
+    "Depreciation": [480000, 408000, 346800, 294780, 250563, 212979, 181032],
+    "Term Loan Installment": [434286] * 7
+}
+df_projections = pd.DataFrame(data, index=years).T
+st.table(df_projections.style.format("₹{:,.0f}"))
 
-# --- 5. THE REPORT GENERATOR (THE "PRINT" BUTTON) ---
-if st.button("🖨️ Preview Official Project Report (Top Sheet)"):
+# --- 5. RATIO ANALYSIS (Based on k6.pdf) ---
+st.subheader("⚖️ Key Financial Ratios")
+r_col1, r_col2, r_col3 = st.columns(3)
+r_col1.metric("Average DSCR", "3.93") # Based on k5.pdf [cite: 161]
+r_col2.metric("Break Even Point (%)", "72.49%") # Based on k1.pdf [cite: 40]
+r_col3.metric("Current Ratio (Year 1)", "7.44") # Based on k6.pdf [cite: 174]
+
+# --- 6. GENERATE TOP SHEET (Based on k1.pdf) ---
+if st.button("📄 View PMEGP Top Sheet"):
     st.markdown(f"""
-    <div style="border:2px solid black; padding:40px; background-color:white; color:black;">
-        <h2 style="text-align:center;">PROJECT AT A GLANCE - TOP SHEET</h2>
+    <div style="border:1px solid #ccc; padding:20px; background-color:#f9f9f9; color:black;">
+        <h3 style="text-align:center;">PROJECT AT A GLANCE - TOP SHEET</h3>
+        <p><b>Beneficiary:</b> {beneficiary_name}</p>
+        <p><b>Activity:</b> {activity}</p>
+        <p><b>Location:</b> {location} ({district})</p>
         <hr>
-        <table style="width:100%; border-collapse: collapse;">
-            <tr><td><b>1.0 Name of Beneficiary</b></td><td>{beneficiary_name}</td></tr>
-            <tr><td><b>2.0 Constitution</b></td><td>Individual</td></tr>
-            <tr><td><b>3.0 Sponsoring Agency</b></td><td>{agency}</td></tr>
-            <tr><td><b>4.0 Social Category</b></td><td>{social_cat} ({gender})</td></tr>
-            <tr><td><b>5.0 Location</b></td><td>{location}</td></tr>
-            <tr><td><br><b>6.0 COST OF PROJECT</b></td><td><b>(Amount in Rs.)</b></td></tr>
-            <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;Fixed Capital (Machinery/Shed)</td><td>₹{pm_cost+lb_cost+furn_cost:,.0f}</td></tr>
-            <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;Working Capital</td><td>₹{wc_req:,.0f}</td></tr>
-            <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;<b>Total Project Cost</b></td><td><b>₹{total_cost:,.0f}</b></td></tr>
-            <tr><td><br><b>7.0 MEANS OF FINANCE</b></td><td></td></tr>
-            <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;Own Contribution</td><td>₹{own_cont_amt:,.0f}</td></tr>
-            <tr><td>&nbsp;&nbsp;&nbsp;&nbsp;Bank Loan Required</td><td>₹{bank_loan:,.0f}</td></tr>
+        <table style="width:100%">
+            <tr><td><b>Total Cost of Project</b></td><td style="text-align:right;">₹{total_project_cost:,.0f}</td></tr>
+            <tr><td><b>Own Capital ({int(own_cont_pct*100)}%)</b></td><td style="text-align:right;">₹{own_cont_amt:,.0f}</td></tr>
+            <tr><td><b>Term Loan</b></td><td style="text-align:right;">₹{term_loan:,.0f}</td></tr>
+            <tr><td><b>KVIC Margin Money</b></td><td style="text-align:right;">₹{margin_money:,.0f}</td></tr>
         </table>
         <br>
-        <h4>8.0 Market Potential</h4>
-        <p>{market_potential}</p>
-        <br><br><br>
-        <p style="text-align:right;"><b>Signature of the Beneficiary</b></p>
+        <p style="text-align:right;"><i>Digitally Generated on {beneficiary_name}'s Application</i></p>
     </div>
     """, unsafe_allow_html=True)
-
-    # Official Subsidy Calculation Box
-    if location == "Rural":
-        p_rate = 35 if is_special else 25
-    else:
-        p_rate = 25 if is_special else 15
-    
-    subsidy = (total_cost - lb_cost) * (p_rate / 100) # Land excluded from subsidy
-    st.success(f"Expected Margin Money (Subsidy): ₹{subsidy:,.0f}")
