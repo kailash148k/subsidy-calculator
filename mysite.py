@@ -37,11 +37,16 @@ with st.sidebar:
     sector = st.selectbox("Sector", ["Manufacturing", "Service", "Food Processing"])
     
     st.subheader("D. Financials")
-    total_cost = st.number_input("Total Project Cost", value=2500000)
-    land_building = st.number_input("Land & Building Portion", value=0)
+    # Breakdown for the Summary Box
+    capex_pm = st.number_input("Plant & Machinery", value=1500000)
+    capex_furn = st.number_input("Furniture & Fixtures", value=200000)
+    capex_lb = st.number_input("Land & Building (Shed)", value=300000)
+    wc_req = st.number_input("Working Capital Requirement", value=500000)
+    
+    total_cost = capex_pm + capex_furn + capex_lb + wc_req
     
     req_term_loan = st.number_input("Required Term Loan", value=15000000) 
-    req_wc_loan = st.number_input("Required Working Capital Loan", value=3000000)
+    req_wc_loan = st.number_input("Required WC Loan", value=3000000)
     
     loan_tenure = st.slider("Total Loan Tenure (Years)", 1, 7, 7)
     loc = st.radio("Location", ["Urban", "Rural"])
@@ -49,6 +54,7 @@ with st.sidebar:
     st.subheader("F. Social Profile")
     gender = st.selectbox("Gender", ["Male", "Female"])
     social_cat = st.selectbox("Category", ["General", "OBC", "SC", "ST"])
+    edu_8th = st.checkbox("Passed 8th Standard?")
 
 # --- 3. SCHEME ENGINE ---
 results = []
@@ -62,13 +68,13 @@ if state == "Rajasthan":
     if (gender == "Female" or social_cat in ["SC", "ST"] or loc == "Rural"):
         v_base_rate += 1
 
-    vyupy_int_benefit = vyupy_loan_capped * (v_base_rate / 100) * 5 
+    vyupy_int_benefit = vyupy_loan_capped * (v_base_rate / 100) * 5
     vyupy_grant_amt = min(vyupy_loan_capped * 0.25, 500000)
     
-    if land_building <= (total_cost * 0.25):
+    if capex_lb <= (total_cost * 0.25):
         results.append({
             "Scheme": "VYUPY",
-            "Capital %": "25% (Max 5L Grant)", # Showing % Here
+            "Capital %": "25% (Grant)",
             "Capital Subsidy": vyupy_grant_amt,
             "Interest %": f"{v_base_rate}%",
             "Tenure": "5 Years",
@@ -79,18 +85,19 @@ if state == "Rajasthan":
 # --- PMEGP Logic ---
 if is_new_project == "New Unit" and applicant_type == "Individual Entrepreneur" and not has_other_subsidy:
     is_special = (gender == "Female" or social_cat != "General" or loc == "Rural")
-    # PMEGP Rates: General (15/25), Special (25/35)
     if loc == "Rural":
         p_rate = 35 if is_special else 25
     else:
         p_rate = 25 if is_special else 15
     
+    # Land is excluded from project cost in PMEGP
+    pmegp_eligible_cost = total_cost - capex_lb
     max_limit = 5000000 if sector == "Manufacturing" else 2000000
-    pmegp_sub = min(total_cost, max_limit) * (p_rate / 100)
+    pmegp_sub = min(pmegp_eligible_cost, max_limit) * (p_rate / 100)
     
     results.append({
         "Scheme": "PMEGP",
-        "Capital %": f"{p_rate}%", # Showing % Here
+        "Capital %": f"{p_rate}%",
         "Capital Subsidy": pmegp_sub,
         "Interest %": "0%",
         "Tenure": "Upfront",
@@ -98,15 +105,13 @@ if is_new_project == "New Unit" and applicant_type == "Individual Entrepreneur" 
         "Total Benefit": pmegp_sub
     })
 
-# --- RIPS 2024 / ODOP ---
+# --- RIPS 2024 ---
 if state == "Rajasthan":
-    is_odop = st.checkbox(f"Is this specifically for {odop_item}?")
-    r_rate = 8 if (is_odop or gender == "Female" or social_cat != "General") else 6
+    r_rate = 8 if (gender == "Female" or social_cat != "General") else 6
     rips_int = (req_term_loan + req_wc_loan) * (r_rate / 100) * loan_tenure
-    
     results.append({
         "Scheme": "RIPS 2024",
-        "Capital %": "0%", # Standard RIPS usually focused on interest
+        "Capital %": "0%",
         "Capital Subsidy": 0,
         "Interest %": f"{r_rate}%",
         "Tenure": f"{loan_tenure} Years",
@@ -114,17 +119,40 @@ if state == "Rajasthan":
         "Total Benefit": rips_int
     })
 
-# --- 4. DISPLAY ---
+# --- 4. DISPLAY RESULTS ---
 st.subheader("🏁 Comparative Analysis of Subsidies")
 if results:
     df = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
-    
-    # Reordered columns to show Percentages first
     df = df[["Scheme", "Capital %", "Capital Subsidy", "Interest %", "Interest Subsidy", "Tenure", "Total Benefit"]]
-    
     st.table(df.style.format({
         "Capital Subsidy": "₹{:,.0f}",
         "Interest Subsidy": "₹{:,.0f}",
         "Total Benefit": "₹{:,.0f}"
     }))
     st.success(f"🏆 Best Financial Benefit: {df.iloc[0]['Scheme']}")
+
+    # --- NEW: PROJECT FINANCING SUMMARY BOX ---
+    st.markdown("---")
+    st.subheader("📋 Project Financing Summary")
+    
+    # Logic for Own Contribution
+    is_special_cat = (gender == "Female" or social_cat != "General" or loc == "Rural")
+    own_cont_pct = 0.05 if is_special_cat else 0.10
+    own_cont_amt = total_cost * own_cont_pct
+    total_loan_required = total_cost - own_cont_amt
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Project Cost", f"₹{total_cost:,.0f}")
+        st.caption(f"(Capex: ₹{capex_pm + capex_furn + capex_lb:,.0f} + WC: ₹{wc_req:,.0f})")
+    with col2:
+        st.metric(f"Own Contribution ({int(own_cont_pct*100)}%)", f"₹{own_cont_amt:,.0f}")
+        st.caption("Margin Money required from Beneficiary")
+    with col3:
+        st.metric("Total to be Matched (Loan)", f"₹{total_loan_required:,.0f}")
+        st.caption("Amount to be funded via Bank Loan")
+
+    st.info(f"📍 **Note:** Land cost of ₹{capex_lb:,.0f} has been excluded from the PMEGP subsidy calculation as per policy.")
+
+else:
+    st.error("No eligible schemes found for this profile.")
