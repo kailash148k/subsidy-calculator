@@ -1,113 +1,88 @@
-import streamlit as st
-import pandas as pd
-import io
+import openpyxl
+from openpyxl.styles import Font, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
-st.set_page_config(page_title="Government-Ready PMEGP Excel Generator", layout="wide")
-st.title("🏛️ Official PMEGP Excel Project Report Engine")
-
-# --- 1. SIDEBAR: APPLICANT PROFILE (Matches row-wise DataSheet) ---
-with st.sidebar:
-    st.header("📋 Applicant Profile")
-    beneficiary_name = st.text_input("Name of Beneficiary", "SMITA SINGH")
-    father_husband = st.text_input("Father's/Spouse's Name", "SOURAV SINGH")
-    unit_address = st.text_area("Unit Address", "F-1 GOKUL BILISS BHUWANA, UDAIPUR 313001")
-    mobile = st.text_input("Mobile", "9982668727")
-    activity = st.text_input("Proposed Activity", "ORTHODONTIC AND IMPLANT CENTRE")
-    social_cat = st.selectbox("Social Category", ["General", "OBC", "SC", "ST", "Minority"])
-    gender = st.selectbox("Gender", ["Male", "Female"])
-    location = st.radio("Unit Location", ["Rural", "Urban"])
-
-# --- 2. MAIN INPUTS: PROJECT COST (Matching row 1-423 Financials) ---
-st.subheader("🏗️ Financial Inputs (Assets vs Funding)")
-col1, col2 = st.columns(2)
-
-with col1:
-    pm_cost = st.number_input("Plant & Machinery", value=3200000)
-    furn_cost = st.number_input("Furniture & Fixtures", value=200000)
-    lb_cost = st.number_input("Workshed / Building", value=0)
-    wc_loan = st.number_input("Working Capital Loan", value=190000)
-    total_cost = pm_cost + furn_cost + lb_cost + wc_loan
-
-with col2:
-    is_special = (gender == "Female" or social_cat != "General" or location == "Rural")
-    own_cont_pct = 0.05 if is_special else 0.10
-    own_cont_amt = total_cost * own_cont_pct
+def generate_pmegp_report(filename="PMEGP_Project_Report.xlsx"):
+    wb = openpyxl.Workbook()
     
-    # Official KVIC Margin Money (Subsidy) Logic 
-    sub_rate = 0.35 if (location == "Rural" and is_special) else (0.25 if location == "Rural" else 0.15)
-    subsidy_amt = (total_cost - lb_cost) * sub_rate
-    term_loan = total_cost - own_cont_amt - wc_loan
+    # 1. BASIC DATA & FRONT PAGE
+    ws_front = wb.active
+    ws_front.title = "DPR_FRONT"
+    ws_front.append(["PROJECT REPORT UNDER PMEGP SCHEME"])
+    ws_front.append([])
+    data_info = [
+        ["1.0", "Name of the Beneficiary", "SMITA SINGH"],
+        ["2.0", "Constitution", "Individual"],
+        ["3.0", "District", "UDAIPUR"],
+        ["4.0", "Social Category", "General"],
+        ["5.0", "Project Cost", 4000000]
+    ]
+    for row in data_info:
+        ws_front.append(row)
+
+    # 2. DEPRECIATION SCHEDULE
+    ws_dep = wb.create_sheet("Depreciation")
+    ws_dep.append(["STATEMENT SHOWING THE DEPRECIATION ON FIXED ASSETS"])
+    ws_dep.append(["Particulars", "Rate", "Value", "Year 1", "Year 2", "Year 3", "Year 4", "Year 5"])
+    assets = [["Plant & Machinery", 0.15, 3500000], ["Furniture & Fixture", 0.10, 300000]]
+    for asset, rate, val in assets:
+        row = [asset, f"{rate*100}%", val]
+        curr = val
+        for _ in range(5):
+            dep = curr * rate
+            row.append(round(dep, 2))
+            curr -= dep
+        ws_dep.append(row)
+
+    # 3. REPAYMENT SCHEDULE
+    ws_rep = wb.create_sheet("Repayment_Schedule")
+    ws_rep.append(["STATEMENT SHOWING THE REPAYMENT OF TERM LOAN & WORKING CAPITAL"])
+    ws_rep.append(["Year", "Opening Balance", "Interest (10%)", "Installment", "Closing Balance"])
+    loan = 3040000
+    inst = loan / 7
+    curr_loan = loan
+    for y in range(1, 8):
+        interest = curr_loan * 0.10
+        closing = curr_loan - inst
+        ws_rep.append([f"Year {y}", round(curr_loan, 2), round(interest, 2), round(inst, 2), round(max(0, closing), 2)])
+        curr_loan = closing
+
+    # 4. CAPACITY & OPERATING EXPENSES
+    ws_ops = wb.create_sheet("Operational_Expenses")
+    ws_ops.append(["S.No", "Particulars", "Year 1", "Year 2", "Year 3", "Year 4", "Year 5"])
+    ws_ops.append(["A", "Capacity Utilization (%)", "60%", "70%", "80%", "90%", "100%"])
     
-    st.metric("Total Project Cost", f"₹{total_cost:,.0f}")
-    st.metric(f"Own Contribution ({int(own_cont_pct*100)}%)", f"₹{own_cont_amt:,.0f}")
-    st.success(f"Expected Subsidy: ₹{subsidy_amt:,.0f}")
+    exp_list = [
+        ["1", "Raw materials", 1500000],
+        ["2", "Wages", 600000],
+        ["3", "Power and Fuel", 120000],
+        ["4", "Repairs and Maintenance", 30000],
+        ["5", "Administrative Expenses", 50000],
+        ["6", "Other Overhead Expenses", 40000]
+    ]
+    for sn, part, base in exp_list:
+        row = [sn, part]
+        for y in range(5):
+            row.append(round(base * (1 + y*0.1), 2))
+        ws_ops.append(row)
 
-# --- 3. EXCEL GENERATION ENGINE ---
-def generate_official_excel():
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        workbook = writer.book
-        
-        # Styles 
-        header_fmt = workbook.add_format({'bold': True, 'align': 'center', 'bg_color': '#D7E4BC', 'border': 1})
-        bold_fmt = workbook.add_format({'bold': True, 'border': 1})
-        normal_fmt = workbook.add_format({'border': 1})
-        currency_fmt = workbook.add_format({'num_format': '₹#,##0', 'border': 1})
+    # 5. SALES REALIZATION
+    ws_sales = wb.create_sheet("Sales_Realization")
+    ws_sales.append(["S.No", "Particulars", "Year 1", "Year 2", "Year 3", "Year 4", "Year 5"])
+    sales_base = 5000000
+    s_row = ["1", "Sales Revenue"]
+    for y in range(5):
+        s_row.append(round(sales_base * (0.6 + y*0.1), 2))
+    ws_sales.append(s_row)
 
-        # Sheet 1: DPR_print (The Top Sheet) 
-        ws_print = workbook.add_worksheet('DPR_print')
-        ws_print.merge_range('A1:G1', 'PROJECT AT A GLANCE - TOP SHEET', header_fmt)
-        
-        # Row-wise data mapping (Matches row 1-423 sequence)
-        ws_print.write('A3', '1.0 Name of Beneficiary', bold_fmt)
-        ws_print.write('D3', beneficiary_name, normal_fmt)
-        ws_print.write('A5', '2.0 Constitution', bold_fmt)
-        ws_print.write('D5', 'Individual', normal_fmt)
-        ws_print.write('A7', '3.0 Father/Spouse Name', bold_fmt)
-        ws_print.write('D7', father_husband, normal_fmt)
-        ws_print.write('A9', '4.0 Unit Address', bold_fmt)
-        ws_print.write('D9', unit_address, normal_fmt)
-        
-        ws_print.write('A11', 'COST OF PROJECT', header_fmt)
-        ws_print.write('D11', '(Amount in Rs.)', header_fmt)
-        ws_print.write('A12', 'Fixed Capital', normal_fmt)
-        ws_print.write('D12', pm_cost + furn_cost + lb_cost, currency_fmt)
-        ws_print.write('A13', 'Working Capital', normal_fmt)
-        ws_print.write('D13', wc_loan, currency_fmt)
-        ws_print.write('A14', 'Total Project Cost', bold_fmt)
-        ws_print.write('D14', total_cost, currency_fmt)
-        
-        ws_print.write('A16', 'MEANS OF FINANCE', header_fmt)
-        ws_print.write('A17', 'Own Contribution', normal_fmt)
-        ws_print.write('D17', own_cont_amt, currency_fmt)
-        ws_print.write('A18', 'Term Loan', normal_fmt)
-        ws_print.write('D18', term_loan, currency_fmt)
-        ws_print.write('A19', 'KVIC Margin Money (Subsidy)', bold_fmt)
-        ws_print.write('D19', subsidy_amt, currency_fmt)
+    # Formatting
+    for sheet in wb.worksheets:
+        for cell in sheet[1]:
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal='center')
 
-        # Sheet 2: DataSheet (Input Sheet) [cite: 400]
-        ws_data = workbook.add_worksheet('DataSheet')
-        ws_data.write('A1', 'DATA INPUT SHEET', header_fmt)
-        ws_data.write('A5', 'Preference for sponsoring agency', normal_fmt)
-        ws_data.write('G5', 'DIC', bold_fmt)
-        ws_data.write('A6', 'Unit Location', normal_fmt)
-        ws_data.write('G6', location, bold_fmt)
+    wb.save(filename)
+    print(f"File {filename} created successfully.")
 
-        # Sheet 3: Project_Report (Analytical) [cite: 458]
-        ws_report = workbook.add_worksheet('Project_Report')
-        ws_report.write('A1', 'PROJECT REPORT FOR', header_fmt)
-        ws_report.write('G1', beneficiary_name, bold_fmt)
-
-    return output.getvalue()
-
-# --- 4. DOWNLOAD BUTTON ---
-st.markdown("---")
-if st.button("🚀 Finalize Rows 1-423 & Create Excel"):
-    excel_file = generate_official_excel()
-    st.download_button(
-        label="📥 Download Full PMEGP Excel for Upload",
-        data=excel_file,
-        file_name=f"Official_DPR_{beneficiary_name.replace(' ', '_')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    st.success("Your Excel file is formatted and ready for the government portal.")
+if __name__ == "__main__":
+    generate_pmegp_report()
