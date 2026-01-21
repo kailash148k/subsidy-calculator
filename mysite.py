@@ -37,11 +37,16 @@ with st.sidebar:
     sector = st.selectbox("Sector", ["Manufacturing", "Service", "Food Processing"])
     
     st.markdown("### D. Financials")
-    # Identify Minimum Contribution Requirement
     social_cat = st.selectbox("Social Category", ["General", "OBC", "SC", "ST"])
     gender = st.selectbox("Gender", ["Male", "Female"])
+    
+    # --- NEW: AGE INPUT ---
+    user_age = st.number_input("Enter Applicant Age", min_value=18, max_value=100, value=25)
+    
     loc = st.radio("Location", ["Urban", "Rural"])
-    is_special_cat = (gender == "Female" or social_cat != "General" or loc == "Rural")
+    
+    # Updated Special Category Logic: VYUPY often targets youth (e.g., under 40)
+    is_special_cat = (gender == "Female" or social_cat != "General" or loc == "Rural" or user_age <= 40)
     min_cont_pct = 0.05 if is_special_cat else 0.10
 
     # TWO-COLUMN FINANCIAL INPUT
@@ -59,7 +64,6 @@ with st.sidebar:
 
     with col_right:
         st.markdown("**Means of Finance (Funding)**")
-        # Editable Own Contribution
         min_amt_req = total_project_cost * min_cont_pct
         own_cont_amt = st.number_input(f"Own Contribution (Min {int(min_cont_pct*100)}%)", value=float(min_amt_req))
         
@@ -78,7 +82,8 @@ with st.sidebar:
 results = []
 if total_project_cost == total_funding and own_cont_amt >= min_amt_req:
     # --- VYUPY Logic ---
-    if state == "Rajasthan":
+    # VYUPY is specifically for "Youth" entrepreneurs
+    if state == "Rajasthan" and user_age <= 40:
         eligible_wc = min(req_wc_loan, total_project_cost * 0.30)
         vyupy_loan = min(req_term_loan + eligible_wc, 20000000)
         v_rate = 8 if vyupy_loan <= 10000000 else 7
@@ -87,6 +92,8 @@ if total_project_cost == total_funding and own_cont_amt >= min_amt_req:
         vyupy_grant = min(vyupy_loan * 0.25, 500000)
         if lb_cost <= (total_project_cost * 0.25):
             results.append({"Scheme": "VYUPY", "Capital %": "25% Grant", "Capital Subsidy": vyupy_grant, "Interest %": f"{v_rate}%", "Tenure": "5 Years", "Interest Subsidy": vyupy_int_sub, "Total Benefit": vyupy_grant + vyupy_int_sub})
+    elif state == "Rajasthan" and user_age > 40:
+        st.sidebar.warning("Note: Applicant age exceeds 40, limiting VYUPY eligibility.")
 
     # --- PMEGP Logic ---
     if is_new_project == "New Unit" and applicant_type == "Individual Entrepreneur" and not has_other_subsidy:
