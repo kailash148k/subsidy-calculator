@@ -1,14 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
-import io
-
-# Safe import for PDF library
-try:
-    from fpdf import FPDF
-    FPDF_AVAILABLE = True
-except ImportError:
-    FPDF_AVAILABLE = False
 
 # --- 1. FULL RAJASTHAN ODOP DATA ---
 rajasthan_odop = {
@@ -69,8 +61,6 @@ with st.sidebar:
         st.markdown("**Means of Finance (Funding)**")
         min_amt_req = total_project_cost * min_cont_pct
         own_cont_amt = st.number_input(f"Own Contribution (Min {int(min_cont_pct*100)}%)", value=float(min_amt_req))
-        if own_cont_amt < min_amt_req:
-            st.error(f"Minimum contribution required: ₹{min_amt_req:,.0f}")
         req_term_loan = st.number_input("Term Loan Required", value=float(pm_cost + furn_cost + lb_cost + other_cost - own_cont_amt))
         req_wc_loan = st.number_input("Working Capital Loan", value=float(wc_req))
         total_funding = own_cont_amt + req_term_loan + req_wc_loan
@@ -83,94 +73,54 @@ with st.sidebar:
 results = []
 v_rate = 0
 pmegp_sub = 0
+vyupy_grant = 0
 
 if total_project_cost == total_funding and own_cont_amt >= min_amt_req:
-    # VYUPY Logic
     if state == "Rajasthan":
         eligible_wc = min(req_wc_loan, total_project_cost * 0.30)
         vyupy_loan = min(req_term_loan + eligible_wc, 20000000)
         v_rate = 8 if vyupy_loan <= 10000000 else 7
         if is_special_cat or is_odop_confirmed: v_rate += 1
-        
         vyupy_int_sub = vyupy_loan * (v_rate / 100) * 5
-        vyupy_grant = min(vyupy_loan * 0.25, 500000)
         if lb_cost <= (total_project_cost * 0.25):
-            results.append({"Scheme": "VYUPY", "Capital Subsidy": vyupy_grant, "Interest %": f"{v_rate}%", "Interest Subsidy": vyupy_int_sub, "Total Benefit": vyupy_grant + vyupy_int_sub})
+            vyupy_grant = min(vyupy_loan * 0.25, 500000)
+        results.append({"Scheme": "VYUPY", "Capital Subsidy": vyupy_grant, "Interest %": f"{v_rate}%", "Interest Subsidy": vyupy_int_sub, "Total Benefit": vyupy_grant + vyupy_int_sub})
 
-    # PMEGP Logic
     if is_new_project == "New Unit" and applicant_type == "Individual Entrepreneur" and not has_other_subsidy:
         p_rate = (35 if loc == "Rural" else 25) if is_special_cat else (25 if loc == "Rural" else 15)
         pmegp_sub = min(total_project_cost - lb_cost, 5000000 if sector == "Manufacturing" else 2000000) * (p_rate / 100)
         results.append({"Scheme": "PMEGP", "Capital Subsidy": pmegp_sub, "Interest %": "0%", "Interest Subsidy": 0, "Total Benefit": pmegp_sub})
 
-    # RIPS 2024
-    if state == "Rajasthan":
-        r_rate = 8 if (is_odop_confirmed or gender == "Female" or social_cat != "General") else 6
-        rips_int = (req_term_loan + req_wc_loan) * (r_rate / 100) * loan_tenure
-        results.append({"Scheme": "RIPS 2024", "Capital Subsidy": 0, "Interest %": f"{r_rate}%", "Interest Subsidy": rips_int, "Total Benefit": rips_int})
-
 # --- 4. DISPLAY ---
 st.subheader("🏁 Comparative Analysis of Subsidies")
 if results:
-    df = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
-    st.table(df.style.format({"Capital Subsidy": "₹{:,.0f}", "Interest Subsidy": "₹{:,.0f}", "Total Benefit": "₹{:,.0f}"}))
+    df_results = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
+    st.table(df_results.style.format({"Capital Subsidy": "₹{:,.0f}", "Interest Subsidy": "₹{:,.0f}", "Total Benefit": "₹{:,.0f}"}))
 
-# --- 5. REPAYMENT SCHEDULE & PDF EXPORT ---
+# --- 5. REPAYMENT & EXCEL EXPORT ---
 st.markdown("---")
 st.subheader("📅 Repayment Schedule")
 col1, col2 = st.columns(2)
-with col1: use_pmegp = st.checkbox("Include PMEGP Capex (Month 1)", value=True)
-with col2: use_vyupy = st.checkbox("Include VYUPY/ODOP Interest (April)", value=True)
+with col1: use_pmegp = st.checkbox("Include PMEGP Grant (Month 1)", value=True)
+with col2: use_vyupy_grant = st.checkbox("Include VYUPY Grant (Month 1)", value=True)
 
 if results:
     sched = []
     curr_bal = req_term_loan + req_wc_loan
-    p_credit = pmegp_sub if use_pmegp else 0
-    v_credit_rate = (v_rate / 100) if use_vyupy else 0
+    active_grant = (pmegp_sub if use_pmegp else 0) + (vyupy_grant if use_vyupy_grant else 0)
     monthly_p = curr_bal / (loan_tenure * 12)
     
     for m in range(1, (loan_tenure * 12) + 1):
         curr_dt = start_date + pd.DateOffset(months=m-1)
-        if m == 1: curr_bal -= p_credit
+        if m == 1: curr_bal -= active_grant
         interest = (curr_bal * 0.10) / 12
-        credit = (curr_bal * v_credit_rate) if (use_vyupy and curr_dt.month == 4) else 0
+        credit = (curr_bal * (v_rate/100)) if (curr_dt.month == 4) else 0
         curr_bal -= monthly_p
-        sched.append({
-            "Month": curr_dt.strftime('%b-%Y'), 
-            "Principal": monthly_p, 
-            "Interest": interest, 
-            "Subsidy Credit": credit + (p_credit if m == 1 else 0), 
-            "Balance": max(0, curr_bal)
-        })
+        sched.append({"Month": curr_dt.strftime('%b-%Y'), "Principal": monthly_p, "Interest": interest, "Subsidy Credit": credit + (active_grant if m == 1 else 0), "Balance": max(0, curr_bal)})
     
     df_sched = pd.DataFrame(sched)
     st.dataframe(df_sched.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
 
-    # PDF Export Logic
-    if FPDF_AVAILABLE:
-        def create_pdf(df_data):
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", 'B', 14)
-            pdf.cell(200, 10, "Repayment Schedule Report", ln=True, align='C')
-            pdf.ln(5)
-            pdf.set_font("Arial", 'B', 8)
-            # Table Header
-            cols = ["Month", "Principal", "Interest", "Credit", "Balance"]
-            for c in cols: pdf.cell(38, 10, c, 1)
-            pdf.ln()
-            # Table Rows
-            pdf.set_font("Arial", size=8)
-            for _, r in df_data.iterrows():
-                pdf.cell(38, 8, r['Month'], 1)
-                pdf.cell(38, 8, f"{r['Principal']:,.0f}", 1)
-                pdf.cell(38, 8, f"{r['Interest']:,.0f}", 1)
-                pdf.cell(38, 8, f"{r['Subsidy Credit']:,.0f}", 1)
-                pdf.cell(38, 8, f"{r['Balance']:,.0f}", 1)
-                pdf.ln()
-            return pdf.output(dest='S').encode('latin-1')
-
-        pdf_bytes = create_pdf(df_sched)
-        st.download_button("📥 Download Repayment PDF", pdf_bytes, "Schedule.pdf", "application/pdf")
-    else:
-        st.warning("PDF Library (fpdf) not found. Run 'pip install fpdf' to enable PDF downloads.")
+    # EXCEL DOWNLOAD (Works without any extra library installation)
+    csv = df_sched.to_csv(index=False).encode('utf-8')
+    st.download_button("📥 Download Repayment Schedule (CSV/Excel)", csv, "Repayment.csv", "text/csv")
