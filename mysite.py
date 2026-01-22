@@ -34,7 +34,6 @@ with st.sidebar:
     state = st.selectbox("State", ["Rajasthan", "Other"])
     district = st.selectbox("District", list(rajasthan_odop.keys()))
     odop_item = rajasthan_odop[district]
-    
     is_odop_confirmed = st.checkbox(f"Confirm: Project is for {odop_item}?", value=False)
     
     sector = st.selectbox("Sector", ["Manufacturing", "Service", "Food Processing"])
@@ -69,69 +68,69 @@ with st.sidebar:
     loan_tenure = st.slider("Total Loan Tenure (Years)", 1, 7, 7)
     start_date = st.date_input("Loan Start Date", date(2026, 1, 1))
 
-# --- 3. SCHEME ENGINE (SEPARATED SCHEMES) ---
+# --- 3. SCHEME ENGINE ---
 results = []
-v_rate, p_sub, r_rate, o_rate = 0, 0, 0, 0
+v_rate, p_sub, r_rate, o_rate, v_grant = 0, 0, 0, 0, 0
 
-if total_project_cost == total_funding and own_cont_amt >= min_amt_req:
-    # 1. ODOP Standalone Logic
+if total_project_cost == total_funding:
+    # 1. ODOP Standalone
     if is_odop_confirmed:
         o_rate = 8
-        odop_int_sub = (req_term_loan + req_wc_loan) * (o_rate / 100) * 5
-        results.append({"Scheme": "ODOP Standalone", "Capital Subsidy": 0, "Interest %": "8%", "Interest Subsidy": odop_int_sub, "Total Benefit": odop_int_sub})
+        o_sub = (req_term_loan + req_wc_loan) * (o_rate / 100) * 5
+        results.append({"Scheme": "ODOP Standalone", "Cap. Sub": 0, "Int %": "8%", "Int. Sub": o_sub, "Total": o_sub})
 
-    # 2. RIPS 2024 Logic
+    # 2. RIPS 2024
     r_rate = 8 if (is_special_cat) else 6
-    rips_int_sub = (req_term_loan + req_wc_loan) * (r_rate / 100) * loan_tenure
-    results.append({"Scheme": "RIPS 2024", "Capital Subsidy": 0, "Interest %": f"{r_rate}%", "Interest Subsidy": rips_int_sub, "Total Benefit": rips_int_sub})
+    r_sub = (req_term_loan + req_wc_loan) * (r_rate / 100) * loan_tenure
+    results.append({"Scheme": "RIPS 2024", "Cap. Sub": 0, "Int %": f"{r_rate}%", "Int. Sub": r_sub, "Total": r_sub})
 
-    # 3. VYUPY Logic
+    # 3. VYUPY
     if state == "Rajasthan":
         vyupy_loan = min(req_term_loan + min(req_wc_loan, total_project_cost * 0.30), 20000000)
         v_rate = 8 if vyupy_loan <= 10000000 else 7
         if is_special_cat: v_rate += 1
-        v_int_sub = vyupy_loan * (v_rate / 100) * 5
+        v_sub = vyupy_loan * (v_rate / 100) * 5
         v_grant = min(vyupy_loan * 0.25, 500000) if lb_cost <= (total_project_cost * 0.25) else 0
-        results.append({"Scheme": "VYUPY", "Capital Subsidy": v_grant, "Interest %": f"{v_rate}%", "Interest Subsidy": v_int_sub, "Total Benefit": v_grant + v_int_sub})
+        results.append({"Scheme": "VYUPY", "Cap. Sub": v_grant, "Int %": f"{v_rate}%", "Int. Sub": v_sub, "Total": v_grant + v_sub})
 
-    # 4. PMEGP Logic
+    # 4. PMEGP
     if is_new_project == "New Unit" and applicant_type == "Individual Entrepreneur" and not has_other_subsidy:
-        p_rate = (35 if loc == "Rural" else 25) if is_special_cat else (25 if loc == "Rural" else 15)
-        p_sub = min(total_project_cost - lb_cost, 5000000 if sector == "Manufacturing" else 2000000) * (p_rate / 100)
-        results.append({"Scheme": "PMEGP", "Capital Subsidy": p_sub, "Interest %": "0%", "Interest Subsidy": 0, "Total Benefit": p_sub})
+        p_rate_pct = (35 if loc == "Rural" else 25) if is_special_cat else (25 if loc == "Rural" else 15)
+        p_sub = min(total_project_cost - lb_cost, 5000000 if sector == "Manufacturing" else 2000000) * (p_rate_pct / 100)
+        results.append({"Scheme": "PMEGP", "Cap. Sub": p_sub, "Int %": "0%", "Int. Sub": 0, "Total": p_sub})
 
-# --- 4. DISPLAY ---
+# --- 4. DISPLAY & SELECTION ---
 st.subheader("🏁 Comparative Analysis of Subsidies")
 if results:
-    df_res = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
-    st.table(df_res.style.format({"Capital Subsidy": "₹{:,.0f}", "Interest Subsidy": "₹{:,.0f}", "Total Benefit": "₹{:,.0f}"}))
+    df_res = pd.DataFrame(results).sort_values(by="Total", ascending=False)
+    st.table(df_res.style.format({"Cap. Sub": "₹{:,.0f}", "Int. Sub": "₹{:,.0f}", "Total": "₹{:,.0f}"}))
 
-# --- 5. REPAYMENT SELECTORS (LOCKED) ---
-st.markdown("---")
-st.subheader("📅 Repayment Schedule Configuration")
-st.write("Select the credit logic for the repayment schedule:")
-col_r1, col_r2, col_r3 = st.columns(3)
-with col_r1: use_p_cap = st.checkbox("Include PMEGP Capex", value=True)
-with col_r2: use_v_cap = st.checkbox("Include VYUPY Capex", value=True)
-with col_r3: select_int_scheme = st.selectbox("Interest Scheme for Schedule", ["None", "ODOP (8%)", "RIPS (6/8%)", "VYUPY"])
+    st.markdown("---")
+    st.subheader("📅 Repayment Schedule Configuration")
+    # THE EXCLUSIVE SELECTOR
+    selected_scheme = st.radio(
+        "Select **ONLY ONE** scheme to generate the Repayment Schedule:",
+        ["None", "PMEGP (Capex Credit)", "VYUPY (Capex + Interest Credit)", "RIPS 2024 (Interest Credit)", "ODOP Standalone (8% Interest Credit)"],
+        horizontal=True
+    )
 
-# Schedule Generator
-if results:
+# --- 5. REPAYMENT SCHEDULE GENERATOR ---
+if results and selected_scheme != "None":
     sched = []
     curr_bal = req_term_loan + req_wc_loan
-    start_cap = (p_sub if use_p_cap else 0) + (v_grant if use_v_cap else 0)
-    
-    # Map selection to rate
-    map_rates = {"None": 0, "ODOP (8%)": 8, "RIPS (6/8%)": r_rate, "VYUPY": v_rate}
-    sched_rate = map_rates[select_int_scheme]
-    
     monthly_p = curr_bal / (loan_tenure * 12)
+    
+    # Logic mapping based on selection
+    cap_credit = p_sub if selected_scheme == "PMEGP (Capex Credit)" else (v_grant if selected_scheme == "VYUPY (Capex + Interest Credit)" else 0)
+    int_rate = v_rate if "VYUPY" in selected_scheme else (r_rate if "RIPS" in selected_scheme else (8 if "ODOP" in selected_scheme else 0))
+
     for m in range(1, (loan_tenure * 12) + 1):
         curr_dt = start_date + pd.DateOffset(months=m-1)
-        if m == 1: curr_bal -= start_cap
-        interest = (curr_bal * 0.10) / 12
-        credit = (curr_bal * (sched_rate/100)) if (sched_rate > 0 and curr_dt.month == 4) else 0
+        if m == 1: curr_bal -= cap_credit
+        interest_charge = (curr_bal * 0.10) / 12
+        int_credit = (curr_bal * (int_rate / 100)) if (int_rate > 0 and curr_dt.month == 4) else 0
         curr_bal -= monthly_p
-        sched.append({"Month": curr_dt.strftime('%b-%Y'), "Principal": monthly_p, "Interest": interest, "Subsidy Credit": credit + (start_cap if m == 1 else 0), "Balance": max(0, curr_bal)})
+        sched.append({"Month": curr_dt.strftime('%b-%Y'), "Principal": monthly_p, "Interest": interest_charge, "Subsidy Credit": int_credit + (cap_credit if m == 1 else 0), "Balance": max(0, curr_bal)})
     
-    st.dataframe(pd.DataFrame(sched).style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
+    df_sched = pd.DataFrame(sched)
+    st.dataframe(df_sched.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
