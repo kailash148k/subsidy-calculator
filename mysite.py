@@ -23,7 +23,7 @@ rajasthan_odop = {
 st.set_page_config(page_title="Rajasthan MSME Subsidy Pro", layout="wide")
 st.title("⚖️ Rajasthan MSME Subsidy Comparison Tool")
 
-# --- 2. ELIGIBILITY & FINANCIALS (LOCKED PRESENTATION) ---
+# --- 2. ELIGIBILITY & FINANCIALS (LOCKED) ---
 with st.sidebar:
     st.header("🔍 Eligibility Profile")
     is_new_project = st.radio("Project Status", ["New Unit", "Existing Unit"])
@@ -69,20 +69,23 @@ with st.sidebar:
     loan_tenure = st.slider("Total Loan Tenure (Years)", 1, 7, 7)
     start_date = st.date_input("Loan Start Date", date(2026, 1, 1))
 
-# --- 3. SCHEME ENGINE ---
+# --- 3. SCHEME ENGINE (SEPARATED SCHEMES) ---
 results = []
-v_rate = 0
-pmegp_sub = 0
-vyupy_grant = 0
-rips_rate = 0
+v_rate, p_sub, r_rate, o_rate = 0, 0, 0, 0
 
 if total_project_cost == total_funding and own_cont_amt >= min_amt_req:
-    # 1. STANDALONE ODOP / RIPS Logic
-    rips_rate = 8 if (is_odop_confirmed or is_special_cat) else 6
-    rips_int_sub = (req_term_loan + req_wc_loan) * (rips_rate / 100) * loan_tenure
-    results.append({"Scheme": "RIPS 2024 / ODOP", "Capital Subsidy": 0, "Interest %": f"{rips_rate}%", "Interest Subsidy": rips_int_sub, "Total Benefit": rips_int_sub})
+    # 1. ODOP Standalone Logic
+    if is_odop_confirmed:
+        o_rate = 8
+        odop_int_sub = (req_term_loan + req_wc_loan) * (o_rate / 100) * 5
+        results.append({"Scheme": "ODOP Standalone", "Capital Subsidy": 0, "Interest %": "8%", "Interest Subsidy": odop_int_sub, "Total Benefit": odop_int_sub})
 
-    # 2. VYUPY Logic
+    # 2. RIPS 2024 Logic
+    r_rate = 8 if (is_special_cat) else 6
+    rips_int_sub = (req_term_loan + req_wc_loan) * (r_rate / 100) * loan_tenure
+    results.append({"Scheme": "RIPS 2024", "Capital Subsidy": 0, "Interest %": f"{r_rate}%", "Interest Subsidy": rips_int_sub, "Total Benefit": rips_int_sub})
+
+    # 3. VYUPY Logic
     if state == "Rajasthan":
         vyupy_loan = min(req_term_loan + min(req_wc_loan, total_project_cost * 0.30), 20000000)
         v_rate = 8 if vyupy_loan <= 10000000 else 7
@@ -91,43 +94,44 @@ if total_project_cost == total_funding and own_cont_amt >= min_amt_req:
         v_grant = min(vyupy_loan * 0.25, 500000) if lb_cost <= (total_project_cost * 0.25) else 0
         results.append({"Scheme": "VYUPY", "Capital Subsidy": v_grant, "Interest %": f"{v_rate}%", "Interest Subsidy": v_int_sub, "Total Benefit": v_grant + v_int_sub})
 
-    # 3. PMEGP Logic
+    # 4. PMEGP Logic
     if is_new_project == "New Unit" and applicant_type == "Individual Entrepreneur" and not has_other_subsidy:
         p_rate = (35 if loc == "Rural" else 25) if is_special_cat else (25 if loc == "Rural" else 15)
-        pmegp_sub = min(total_project_cost - lb_cost, 5000000 if sector == "Manufacturing" else 2000000) * (p_rate / 100)
-        results.append({"Scheme": "PMEGP", "Capital Subsidy": pmegp_sub, "Interest %": "0%", "Interest Subsidy": 0, "Total Benefit": pmegp_sub})
+        p_sub = min(total_project_cost - lb_cost, 5000000 if sector == "Manufacturing" else 2000000) * (p_rate / 100)
+        results.append({"Scheme": "PMEGP", "Capital Subsidy": p_sub, "Interest %": "0%", "Interest Subsidy": 0, "Total Benefit": p_sub})
 
 # --- 4. DISPLAY ---
 st.subheader("🏁 Comparative Analysis of Subsidies")
 if results:
-    df_results = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
-    st.table(df_results.style.format({"Capital Subsidy": "₹{:,.0f}", "Interest Subsidy": "₹{:,.0f}", "Total Benefit": "₹{:,.0f}"}))
+    df_res = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
+    st.table(df_res.style.format({"Capital Subsidy": "₹{:,.0f}", "Interest Subsidy": "₹{:,.0f}", "Total Benefit": "₹{:,.0f}"}))
 
-# --- 5. REPAYMENT SELECTORS (RESTORED) ---
+# --- 5. REPAYMENT SELECTORS (LOCKED) ---
 st.markdown("---")
 st.subheader("📅 Repayment Schedule Configuration")
-st.write("Pick the scheme to simulate in the repayment chart:")
-col_sel1, col_sel2 = st.columns(2)
-with col_sel1: 
-    use_pmegp_credit = st.checkbox("Apply PMEGP Capex Credit (Month 1)", value=True)
-with col_sel2:
-    use_int_sub_credit = st.checkbox("Apply Interest Subvention (April Credit)", value=True)
+st.write("Select the credit logic for the repayment schedule:")
+col_r1, col_r2, col_r3 = st.columns(3)
+with col_r1: use_p_cap = st.checkbox("Include PMEGP Capex", value=True)
+with col_r2: use_v_cap = st.checkbox("Include VYUPY Capex", value=True)
+with col_r3: select_int_scheme = st.selectbox("Interest Scheme for Schedule", ["None", "ODOP (8%)", "RIPS (6/8%)", "VYUPY"])
 
-# Schedule Logic
+# Schedule Generator
 if results:
     sched = []
     curr_bal = req_term_loan + req_wc_loan
-    p_credit = pmegp_sub if use_pmegp_credit else 0
-    # Use VYUPY or RIPS rate for interest subvention
-    active_int_rate = max(v_rate, rips_rate) if use_int_sub_credit else 0
-    monthly_p = curr_bal / (loan_tenure * 12)
+    start_cap = (p_sub if use_p_cap else 0) + (v_grant if use_v_cap else 0)
     
+    # Map selection to rate
+    map_rates = {"None": 0, "ODOP (8%)": 8, "RIPS (6/8%)": r_rate, "VYUPY": v_rate}
+    sched_rate = map_rates[select_int_scheme]
+    
+    monthly_p = curr_bal / (loan_tenure * 12)
     for m in range(1, (loan_tenure * 12) + 1):
         curr_dt = start_date + pd.DateOffset(months=m-1)
-        if m == 1: curr_bal -= p_credit
+        if m == 1: curr_bal -= start_cap
         interest = (curr_bal * 0.10) / 12
-        credit = (curr_bal * (active_int_rate/100)) if (use_int_sub_credit and curr_dt.month == 4) else 0
+        credit = (curr_bal * (sched_rate/100)) if (sched_rate > 0 and curr_dt.month == 4) else 0
         curr_bal -= monthly_p
-        sched.append({"Month": curr_dt.strftime('%b-%Y'), "Principal": monthly_p, "Interest": interest, "Subsidy Credit": credit + (p_credit if m == 1 else 0), "Balance": max(0, curr_bal)})
+        sched.append({"Month": curr_dt.strftime('%b-%Y'), "Principal": monthly_p, "Interest": interest, "Subsidy Credit": credit + (start_cap if m == 1 else 0), "Balance": max(0, curr_bal)})
     
     st.dataframe(pd.DataFrame(sched).style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
