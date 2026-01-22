@@ -1,16 +1,8 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
-import io
 
-# Check for FPDF library
-try:
-    from fpdf import FPDF
-    FPDF_AVAILABLE = True
-except ImportError:
-    FPDF_AVAILABLE = False
-
-# --- 1. FULL RAJASTHAN ODOP DATA (LOCKED) ---
+# --- 1. FULL RAJASTHAN ODOP DATA ---
 rajasthan_odop = {
     "Ajmer": "Granite and Marble Products", "Alwar": "Automobiles Parts", "Balotra": "Textile Products",
     "Banswara": "Marble Products", "Baran": "Garlic Products", "Barmer": "Kasheedakari",
@@ -31,7 +23,7 @@ rajasthan_odop = {
 st.set_page_config(page_title="Rajasthan MSME Subsidy Pro", layout="wide")
 st.title("⚖️ Rajasthan MSME Subsidy Comparison Tool")
 
-# --- 2. ELIGIBILITY & FINANCIALS (LOCKED) ---
+# --- 2. ELIGIBILITY & FINANCIALS (LOCKED PRESENTATION) ---
 with st.sidebar:
     st.header("🔍 Eligibility Profile")
     is_new_project = st.radio("Project Status", ["New Unit", "Existing Unit"])
@@ -76,67 +68,80 @@ with st.sidebar:
 
     loan_tenure = st.slider("Total Loan Tenure (Years)", 1, 7, 7)
     start_date = st.date_input("Loan Start Date", date(2026, 1, 1))
+    edu_8th = st.checkbox("Passed 8th Standard?")
 
-# --- 3. SCHEME ENGINE & REPAYMENT LOGIC ---
-pmegp_sub = 0
-v_rate = 0
+# --- 3. SCHEME ENGINE ---
 results = []
-
 if total_project_cost == total_funding and own_cont_amt >= min_amt_req:
-    # VYUPY & PMEGP Logic (As per your Gold Standard)
+    # VYUPY Logic
     if state == "Rajasthan":
         eligible_wc = min(req_wc_loan, total_project_cost * 0.30)
         vyupy_loan = min(req_term_loan + eligible_wc, 20000000)
         v_rate = 8 if vyupy_loan <= 10000000 else 7
         if is_special_cat: v_rate += 1
-        results.append({"Scheme": "VYUPY", "Interest Subsidy": vyupy_loan * (v_rate / 100) * 5, "Total Benefit": 0}) # Logic placeholder
+        vyupy_int_sub = vyupy_loan * (v_rate / 100) * 5
+        vyupy_grant = min(vyupy_loan * 0.25, 500000)
+        if lb_cost <= (total_project_cost * 0.25):
+            results.append({"Scheme": "VYUPY", "Capital %": "25% Grant", "Capital Subsidy": vyupy_grant, "Interest %": f"{v_rate}%", "Tenure": "5 Years", "Interest Subsidy": vyupy_int_sub, "Total Benefit": vyupy_grant + vyupy_int_sub})
 
-    if is_new_project == "New Unit":
+    # PMEGP Logic
+    if is_new_project == "New Unit" and applicant_type == "Individual Entrepreneur" and not has_other_subsidy:
         p_rate = (35 if loc == "Rural" else 25) if is_special_cat else (25 if loc == "Rural" else 15)
-        pmegp_sub = (total_project_cost - lb_cost) * (p_rate / 100)
-        results.append({"Scheme": "PMEGP", "Capital Subsidy": pmegp_sub, "Total Benefit": pmegp_sub})
+        pmegp_cost = total_project_cost - lb_cost
+        max_limit = 5000000 if sector == "Manufacturing" else 2000000
+        pmegp_sub = min(pmegp_cost, max_limit) * (p_rate / 100)
+        results.append({"Scheme": "PMEGP", "Capital %": f"{p_rate}%", "Capital Subsidy": pmegp_sub, "Interest %": "0%", "Tenure": "Upfront", "Interest Subsidy": 0, "Total Benefit": pmegp_sub})
 
-# --- 4. REPAYMENT & PDF FEATHER ---
+    # RIPS 2024
+    if state == "Rajasthan":
+        r_rate = 8 if (gender == "Female" or social_cat != "General") else 6
+        rips_int = (req_term_loan + req_wc_loan) * (r_rate / 100) * loan_tenure
+        results.append({"Scheme": "RIPS 2024", "Capital %": "0%", "Capital Subsidy": 0, "Interest %": f"{r_rate}%", "Tenure": f"{loan_tenure} Years", "Interest Subsidy": rips_int, "Total Benefit": rips_int})
+
+# --- 4. DISPLAY ---
+st.subheader("🏁 Comparative Analysis of Subsidies")
+if results:
+    df = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
+    st.table(df.style.format({"Capital Subsidy": "₹{:,.0f}", "Interest Subsidy": "₹{:,.0f}", "Total Benefit": "₹{:,.0f}"}))
+
+    st.markdown("---")
+    st.subheader("📋 Project Financing Summary")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Project Cost", f"₹{total_project_cost:,.0f}")
+    c2.metric(f"Own Contribution ({int((own_cont_amt/total_project_cost)*100)}%)", f"₹{own_cont_amt:,.0f}")
+    c3.metric("Bank Loan Required", f"₹{(req_term_loan + req_wc_loan):,.0f}")
+
+# --- 5. REPAYMENT SCHEDULE SELECTOR & CHART ---
 st.markdown("---")
 st.subheader("📅 Repayment Schedule Configuration")
+st.write("Select schemes to include in the repayment calculation:")
 col1, col2 = st.columns(2)
-with col1: use_pmegp = st.checkbox("Include PMEGP Capex (Month 1)", value=True)
-with col2: use_vyupy = st.checkbox("Include VYUPY Int. Subsidy (April)", value=True)
+with col1: use_pmegp_in_sched = st.checkbox("Include PMEGP Capex (Month 1 Credit)", value=True)
+with col2: use_vyupy_in_sched = st.checkbox("Include VYUPY Interest Subsidy (Annual April Credit)", value=True)
 
-if total_funding > 0:
-    # Schedule Logic
+def get_repayment_data(loan, tenure, start_dt, cap_sub, int_sub_rate, is_vyupy):
     sched = []
-    curr_bal = req_term_loan + req_wc_loan
-    p_cap = pmegp_sub if use_pmegp else 0
-    v_sub = (v_rate / 100) if use_vyupy else 0
-    monthly_p = curr_bal / (loan_tenure * 12)
-    
-    for m in range(1, (loan_tenure * 12) + 1):
-        curr_dt = start_date + pd.DateOffset(months=m-1)
-        if m == 1: curr_bal -= p_cap
-        interest = (curr_bal * 0.10) / 12
-        credit = (curr_bal * v_sub) if (use_vyupy and curr_dt.month == 4) else 0
-        curr_bal -= monthly_p
-        sched.append({"Month": curr_dt.strftime('%b-%Y'), "Principal": monthly_p, "Interest": interest, "Credit": credit + (p_cap if m == 1 else 0), "Balance": max(0, curr_bal)})
-    
-    df_sched = pd.DataFrame(sched)
-    st.dataframe(df_sched.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Credit": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
+    curr_bal = loan
+    monthly_principal = loan / (tenure * 12)
+    for m in range(1, (tenure * 12) + 1):
+        curr_dt = start_dt + pd.DateOffset(months=m-1)
+        if m == 1: curr_bal -= cap_sub # Capex credit
+        
+        interest_charge = (curr_bal * 0.10) / 12 
+        int_credit = (curr_bal * int_sub_rate) if (is_vyupy and curr_dt.month == 4) else 0
+            
+        curr_bal -= monthly_principal
+        sched.append({
+            "Month": curr_dt.strftime('%b-%Y'),
+            "Principal": monthly_principal,
+            "Interest": interest_charge,
+            "Subsidy Credit": int_credit + (cap_sub if m == 1 else 0),
+            "Net Balance": max(0, curr_bal)
+        })
+    return pd.DataFrame(sched)
 
-    if FPDF_AVAILABLE:
-        def create_pdf(df):
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, "Repayment Schedule Report", ln=True, align='C')
-            pdf.set_font("Arial", 'B', 8)
-            for c in ["Month", "Principal", "Interest", "Credit", "Balance"]: pdf.cell(38, 10, c, 1)
-            pdf.ln()
-            pdf.set_font("Arial", size=8)
-            for _, r in df.iterrows():
-                for val in r: pdf.cell(38, 8, str(val) if isinstance(val, str) else f"{val:,.0f}", 1)
-                pdf.ln()
-            return pdf.output(dest='S').encode('latin-1')
+p_cap = pmegp_sub if (use_pmegp_in_sched and 'PMEGP' in df['Scheme'].values) else 0
+v_sub = (v_rate/100) if (use_vyupy_in_sched and 'VYUPY' in df['Scheme'].values) else 0
 
-        st.download_button("📥 Download PDF", create_pdf(df_sched), "Schedule.pdf", "application/pdf")
-    else:
-        st.warning("⚠️ PDF Library not found. Run 'pip install fpdf' in your terminal.")
+df_sched = get_repayment_data(req_term_loan + req_wc_loan, loan_tenure, start_date, p_cap, v_sub, use_vyupy_in_sched)
+st.dataframe(df_sched.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Net Balance": "₹{:,.0f}"}))
