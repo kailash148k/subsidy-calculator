@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
+from fpdf import FPDF
+import io
 
 # --- 1. FULL RAJASTHAN ODOP DATA ---
 rajasthan_odop = {
@@ -23,7 +25,7 @@ rajasthan_odop = {
 st.set_page_config(page_title="Rajasthan MSME Subsidy Pro", layout="wide")
 st.title("⚖️ Rajasthan MSME Subsidy Comparison Tool")
 
-# --- 2. ELIGIBILITY & FINANCIALS (LOCKED PRESENTATION) ---
+# --- 2. ELIGIBILITY & FINANCIALS (LOCKED) ---
 with st.sidebar:
     st.header("🔍 Eligibility Profile")
     is_new_project = st.radio("Project Status", ["New Unit", "Existing Unit"])
@@ -68,7 +70,6 @@ with st.sidebar:
 
     loan_tenure = st.slider("Total Loan Tenure (Years)", 1, 7, 7)
     start_date = st.date_input("Loan Start Date", date(2026, 1, 1))
-    edu_8th = st.checkbox("Passed 8th Standard?")
 
 # --- 3. SCHEME ENGINE ---
 results = []
@@ -92,17 +93,11 @@ if total_project_cost == total_funding and own_cont_amt >= min_amt_req:
         pmegp_sub = min(pmegp_cost, max_limit) * (p_rate / 100)
         results.append({"Scheme": "PMEGP", "Capital %": f"{p_rate}%", "Capital Subsidy": pmegp_sub, "Interest %": "0%", "Tenure": "Upfront", "Interest Subsidy": 0, "Total Benefit": pmegp_sub})
 
-    # RIPS 2024
-    if state == "Rajasthan":
-        r_rate = 8 if (gender == "Female" or social_cat != "General") else 6
-        rips_int = (req_term_loan + req_wc_loan) * (r_rate / 100) * loan_tenure
-        results.append({"Scheme": "RIPS 2024", "Capital %": "0%", "Capital Subsidy": 0, "Interest %": f"{r_rate}%", "Tenure": f"{loan_tenure} Years", "Interest Subsidy": rips_int, "Total Benefit": rips_int})
-
 # --- 4. DISPLAY ---
 st.subheader("🏁 Comparative Analysis of Subsidies")
 if results:
-    df = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
-    st.table(df.style.format({"Capital Subsidy": "₹{:,.0f}", "Interest Subsidy": "₹{:,.0f}", "Total Benefit": "₹{:,.0f}"}))
+    df_results = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
+    st.table(df_results.style.format({"Capital Subsidy": "₹{:,.0f}", "Interest Subsidy": "₹{:,.0f}", "Total Benefit": "₹{:,.0f}"}))
 
     st.markdown("---")
     st.subheader("📋 Project Financing Summary")
@@ -111,37 +106,48 @@ if results:
     c2.metric(f"Own Contribution ({int((own_cont_amt/total_project_cost)*100)}%)", f"₹{own_cont_amt:,.0f}")
     c3.metric("Bank Loan Required", f"₹{(req_term_loan + req_wc_loan):,.0f}")
 
-# --- 5. REPAYMENT SCHEDULE SELECTOR & CHART ---
+# --- 5. REPAYMENT & PDF EXPORT ---
 st.markdown("---")
-st.subheader("📅 Repayment Schedule Configuration")
-st.write("Select schemes to include in the repayment calculation:")
-col1, col2 = st.columns(2)
-with col1: use_pmegp_in_sched = st.checkbox("Include PMEGP Capex (Month 1 Credit)", value=True)
-with col2: use_vyupy_in_sched = st.checkbox("Include VYUPY Interest Subsidy (Annual April Credit)", value=True)
+st.subheader("📅 Repayment Schedule Generator")
+col_x, col_y = st.columns(2)
+with col_x: use_pmegp = st.checkbox("Include PMEGP Capex Credit (Month 1)", value=True)
+with col_y: use_vyupy = st.checkbox("Include VYUPY Interest Subvention (Every April)", value=True)
 
-def get_repayment_data(loan, tenure, start_dt, cap_sub, int_sub_rate, is_vyupy):
+def get_repayment_df(loan, tenure, start_dt, p_cap, v_sub_rate, v_active):
     sched = []
     curr_bal = loan
     monthly_principal = loan / (tenure * 12)
     for m in range(1, (tenure * 12) + 1):
         curr_dt = start_dt + pd.DateOffset(months=m-1)
-        if m == 1: curr_bal -= cap_sub # Capex credit
-        
-        interest_charge = (curr_bal * 0.10) / 12 
-        int_credit = (curr_bal * int_sub_rate) if (is_vyupy and curr_dt.month == 4) else 0
-            
+        if m == 1: curr_bal -= p_cap 
+        interest = (curr_bal * 0.10) / 12 
+        credit = (curr_bal * v_sub_rate) if (v_active and curr_dt.month == 4) else 0
         curr_bal -= monthly_principal
-        sched.append({
-            "Month": curr_dt.strftime('%b-%Y'),
-            "Principal": monthly_principal,
-            "Interest": interest_charge,
-            "Subsidy Credit": int_credit + (cap_sub if m == 1 else 0),
-            "Net Balance": max(0, curr_bal)
-        })
+        sched.append({"Month": curr_dt.strftime('%b-%Y'), "Principal": monthly_principal, "Interest": interest, "Subsidy Credit": credit + (p_cap if m == 1 else 0), "Balance": max(0, curr_bal)})
     return pd.DataFrame(sched)
 
-p_cap = pmegp_sub if (use_pmegp_in_sched and 'PMEGP' in df['Scheme'].values) else 0
-v_sub = (v_rate/100) if (use_vyupy_in_sched and 'VYUPY' in df['Scheme'].values) else 0
+def create_pdf(df):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(200, 10, "PMEGP/MSME Repayment Schedule", ln=True, align='C')
+    pdf.set_font("Arial", 'B', 9)
+    cols = ["Month", "Principal", "Interest", "Credit", "Balance"]
+    for c in cols: pdf.cell(38, 10, c, 1)
+    pdf.ln()
+    pdf.set_font("Arial", size=8)
+    for _, row in df.iterrows():
+        pdf.cell(38, 8, row['Month'], 1)
+        pdf.cell(38, 8, f"{row['Principal']:,.0f}", 1)
+        pdf.cell(38, 8, f"{row['Interest']:,.0f}", 1)
+        pdf.cell(38, 8, f"{row['Subsidy Credit']:,.0f}", 1)
+        pdf.cell(38, 8, f"{row['Balance']:,.0f}", 1)
+        pdf.ln()
+    return pdf.output(dest='S').encode('latin-1')
 
-df_sched = get_repayment_data(req_term_loan + req_wc_loan, loan_tenure, start_date, p_cap, v_sub, use_vyupy_in_sched)
-st.dataframe(df_sched.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Net Balance": "₹{:,.0f}"}))
+if results:
+    p_credit = pmegp_sub if use_pmegp else 0
+    v_credit_rate = (v_rate / 100) if use_vyupy else 0
+    repay_df = get_repayment_df(req_term_loan + req_wc_loan, loan_tenure, start_date, p_credit, v_credit_rate, use_vyupy)
+    st.dataframe(repay_df.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
+    st.download_button("📥 Download Repayment PDF", create_pdf(repay_df), "Repayment_Schedule.pdf", "application/pdf")
