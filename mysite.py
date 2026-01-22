@@ -72,6 +72,10 @@ with st.sidebar:
 
 # --- 3. SCHEME ENGINE ---
 results = []
+# Fixed: Initialize variables to prevent errors in Section 5
+v_rate = 0
+pmegp_sub = 0
+
 if total_project_cost == total_funding and own_cont_amt >= min_amt_req:
     # VYUPY Logic
     if state == "Rajasthan":
@@ -140,8 +144,10 @@ def get_repayment_data(loan, tenure, start_dt, cap_sub, int_sub_rate, is_vyupy):
         })
     return pd.DataFrame(sched)
 
-p_cap = pmegp_sub if (use_pmegp_in_sched and 'PMEGP' in df['Scheme'].values) else 0
-v_sub = (v_rate/100) if (use_vyupy_in_sched and 'VYUPY' in df['Scheme'].values) else 0
+if results:
+    # Safely extract values for repayment logic
+    p_cap = pmegp_sub if (use_pmegp_in_sched) else 0
+    v_sub = (v_rate/100) if (use_vyupy_in_sched) else 0
 
-df_sched = get_repayment_data(req_term_loan + req_wc_loan, loan_tenure, start_date, p_cap, v_sub, use_vyupy_in_sched)
-st.dataframe(df_sched.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Net Balance": "₹{:,.0f}"}))
+    df_sched = get_repayment_data(req_term_loan + req_wc_loan, loan_tenure, start_date, p_cap, v_sub, use_vyupy_in_sched)
+    st.dataframe(df_sched.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Net Balance": "₹{:,.0f}"}))
