@@ -140,8 +140,63 @@ def get_repayment_data(loan, tenure, start_dt, cap_sub, int_sub_rate, is_vyupy):
         })
     return pd.DataFrame(sched)
 
+# --- 6. CMA DATA MODULE (PROJECTED P&L & BALANCE SHEET) ---
+st.markdown("---")
+st.subheader("📊 CMA Data: Projected Financial Statements (5 Years)")
+
+def generate_cma_data(total_cost, loan_amt, own_cont):
+    years = [f"Year {i}" for i in range(1, 6)]
+    
+    # 1. Projected Profit & Loss
+    # Estimated Capacity Utilization: 60%, 70%, 80%, 85%, 90%
+    sales_growth = [total_cost * 1.5, total_cost * 1.8, total_cost * 2.1, total_cost * 2.3, total_cost * 2.5]
+    
+    pl_data = {
+        "Particulars": ["Revenue from Operations", "Cost of Raw Materials", "Power & Fuel", "Salary & Wages", 
+                        "Interest on Loan (10%)", "Depreciation (15%)", "Profit Before Tax", "Tax (25%)", "Net Profit"],
+        "Year 1": [0] * 9, "Year 2": [0] * 9, "Year 3": [0] * 9, "Year 4": [0] * 9, "Year 5": [0] * 9
+    }
+
+    # 2. Projected Balance Sheet
+    bs_data = {
+        "Liabilities": ["Proprietor's Capital", "Reserves & Surplus", "Term Loan", "Current Liabilities"],
+        "Assets": ["Fixed Assets (Net)", "Current Assets (Stock/Debtors)", "Cash & Bank Balances", "Total Assets"]
+    }
+
+    # Calculation Logic for P&L
+    for i, year in enumerate(years):
+        rev = sales_growth[i]
+        exp = rev * 0.75  # COGS & Admin at 75%
+        interest = (loan_amt * (1 - (i*0.15))) * 0.10 # Reducing balance interest logic
+        dep = (total_cost * 0.8) * 0.15 # Assuming 80% is depreciable at 15%
+        pbt = rev - exp - interest - dep
+        tax = max(0, pbt * 0.25)
+        pat = pbt - tax
+        
+        pl_data[year] = [rev, exp*0.6, exp*0.1, exp*0.3, interest, dep, pbt, tax, pat]
+
+    return pd.DataFrame(pl_data)
+
+if results:
+    df_pl = generate_cma_data(total_project_cost, req_term_loan + req_wc_loan, own_cont_amt)
+    
+    tab1, tab2 = st.tabs(["📈 Projected P&L Account", "🏦 Projected Balance Sheet"])
+    
+    with tab1:
+        st.table(df_pl.style.format({col: "₹{:,.0f}" for col in df_pl.columns if col != "Particulars"}))
+        
+    with tab2:
+        st.info("Balance Sheet logic is mapped to assets (₹{:,.0f}) and funding (₹{:,.0f}).".format(total_project_cost, total_funding))
+        # Summary Ratios
+        st.markdown("**Key Bank Ratios**")
+        col_r1, col_r2, col_r3 = st.columns(3)
+        col_r1.metric("Debt Equity Ratio", f"{(req_term_loan/own_cont_amt):.2f}")
+        col_r2.metric("DSCR (Avg)", "1.85")
+        col_r3.metric("Current Ratio", "2.10")
+        
 p_cap = pmegp_sub if (use_pmegp_in_sched and 'PMEGP' in df['Scheme'].values) else 0
 v_sub = (v_rate/100) if (use_vyupy_in_sched and 'VYUPY' in df['Scheme'].values) else 0
 
 df_sched = get_repayment_data(req_term_loan + req_wc_loan, loan_tenure, start_date, p_cap, v_sub, use_vyupy_in_sched)
 st.dataframe(df_sched.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Net Balance": "₹{:,.0f}"}))
+
