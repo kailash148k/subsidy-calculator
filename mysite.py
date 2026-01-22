@@ -1,6 +1,14 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
+import io
+
+# Safe import for PDF library
+try:
+    from fpdf import FPDF
+    FPDF_AVAILABLE = True
+except ImportError:
+    FPDF_AVAILABLE = False
 
 # --- 1. FULL RAJASTHAN ODOP DATA ---
 rajasthan_odop = {
@@ -35,7 +43,6 @@ with st.sidebar:
     district = st.selectbox("District", list(rajasthan_odop.keys()))
     odop_item = rajasthan_odop[district]
     
-    # --- ODOP TICK BOX (Moved here for visibility) ---
     is_odop_confirmed = st.checkbox(f"Confirm: Project is for {odop_item}?", value=False)
     
     sector = st.selectbox("Sector", ["Manufacturing", "Service", "Food Processing"])
@@ -82,7 +89,6 @@ if total_project_cost == total_funding and own_cont_amt >= min_amt_req:
     if state == "Rajasthan":
         eligible_wc = min(req_wc_loan, total_project_cost * 0.30)
         vyupy_loan = min(req_term_loan + eligible_wc, 20000000)
-        # ODOP check impacts the interest rate
         v_rate = 8 if vyupy_loan <= 10000000 else 7
         if is_special_cat or is_odop_confirmed: v_rate += 1
         
@@ -97,7 +103,7 @@ if total_project_cost == total_funding and own_cont_amt >= min_amt_req:
         pmegp_sub = min(total_project_cost - lb_cost, 5000000 if sector == "Manufacturing" else 2000000) * (p_rate / 100)
         results.append({"Scheme": "PMEGP", "Capital Subsidy": pmegp_sub, "Interest %": "0%", "Interest Subsidy": 0, "Total Benefit": pmegp_sub})
 
-    # RIPS 2024 (ODOP impacts this scheme the most)
+    # RIPS 2024
     if state == "Rajasthan":
         r_rate = 8 if (is_odop_confirmed or gender == "Female" or social_cat != "General") else 6
         rips_int = (req_term_loan + req_wc_loan) * (r_rate / 100) * loan_tenure
@@ -109,7 +115,7 @@ if results:
     df = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
     st.table(df.style.format({"Capital Subsidy": "₹{:,.0f}", "Interest Subsidy": "₹{:,.0f}", "Total Benefit": "₹{:,.0f}"}))
 
-# --- 5. REPAYMENT SCHEDULE ---
+# --- 5. REPAYMENT SCHEDULE & PDF EXPORT ---
 st.markdown("---")
 st.subheader("📅 Repayment Schedule")
 col1, col2 = st.columns(2)
@@ -129,7 +135,42 @@ if results:
         interest = (curr_bal * 0.10) / 12
         credit = (curr_bal * v_credit_rate) if (use_vyupy and curr_dt.month == 4) else 0
         curr_bal -= monthly_p
-        sched.append({"Month": curr_dt.strftime('%b-%Y'), "Principal": monthly_p, "Interest": interest, "Subsidy Credit": credit + (p_credit if m == 1 else 0), "Balance": max(0, curr_bal)})
+        sched.append({
+            "Month": curr_dt.strftime('%b-%Y'), 
+            "Principal": monthly_p, 
+            "Interest": interest, 
+            "Subsidy Credit": credit + (p_credit if m == 1 else 0), 
+            "Balance": max(0, curr_bal)
+        })
     
-    st.dataframe(pd.DataFrame(sched).style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
+    df_sched = pd.DataFrame(sched)
+    st.dataframe(df_sched.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
 
+    # PDF Export Logic
+    if FPDF_AVAILABLE:
+        def create_pdf(df_data):
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(200, 10, "Repayment Schedule Report", ln=True, align='C')
+            pdf.ln(5)
+            pdf.set_font("Arial", 'B', 8)
+            # Table Header
+            cols = ["Month", "Principal", "Interest", "Credit", "Balance"]
+            for c in cols: pdf.cell(38, 10, c, 1)
+            pdf.ln()
+            # Table Rows
+            pdf.set_font("Arial", size=8)
+            for _, r in df_data.iterrows():
+                pdf.cell(38, 8, r['Month'], 1)
+                pdf.cell(38, 8, f"{r['Principal']:,.0f}", 1)
+                pdf.cell(38, 8, f"{r['Interest']:,.0f}", 1)
+                pdf.cell(38, 8, f"{r['Subsidy Credit']:,.0f}", 1)
+                pdf.cell(38, 8, f"{r['Balance']:,.0f}", 1)
+                pdf.ln()
+            return pdf.output(dest='S').encode('latin-1')
+
+        pdf_bytes = create_pdf(df_sched)
+        st.download_button("📥 Download Repayment PDF", pdf_bytes, "Schedule.pdf", "application/pdf")
+    else:
+        st.warning("PDF Library (fpdf) not found. Run 'pip install fpdf' to enable PDF downloads.")
