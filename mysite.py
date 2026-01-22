@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
-from fpdf import FPDF
-import io
 
 # --- 1. FULL RAJASTHAN ODOP DATA ---
 rajasthan_odop = {
@@ -25,7 +23,7 @@ rajasthan_odop = {
 st.set_page_config(page_title="Rajasthan MSME Subsidy Pro", layout="wide")
 st.title("⚖️ Rajasthan MSME Subsidy Comparison Tool")
 
-# --- 2. ELIGIBILITY & FINANCIALS ---
+# --- 2. ELIGIBILITY & FINANCIALS (LOCKED PRESENTATION) ---
 with st.sidebar:
     st.header("🔍 Eligibility Profile")
     is_new_project = st.radio("Project Status", ["New Unit", "Existing Unit"])
@@ -113,56 +111,37 @@ if results:
     c2.metric(f"Own Contribution ({int((own_cont_amt/total_project_cost)*100)}%)", f"₹{own_cont_amt:,.0f}")
     c3.metric("Bank Loan Required", f"₹{(req_term_loan + req_wc_loan):,.0f}")
 
-# --- 5. REPAYMENT & PDF EXPORT ---
+# --- 5. REPAYMENT SCHEDULE SELECTOR & CHART ---
 st.markdown("---")
-st.subheader("📅 Repayment Schedule Generator")
-st.write("Select factors to include in the Repayment Schedule:")
-col_x, col_y = st.columns(2)
-with col_x: use_pmegp = st.checkbox("Include PMEGP Capex Credit (Month 1)", value=True)
-with col_y: use_vyupy = st.checkbox("Include VYUPY Interest Subvention (Every April)", value=True)
+st.subheader("📅 Repayment Schedule Configuration")
+st.write("Select schemes to include in the repayment calculation:")
+col1, col2 = st.columns(2)
+with col1: use_pmegp_in_sched = st.checkbox("Include PMEGP Capex (Month 1 Credit)", value=True)
+with col2: use_vyupy_in_sched = st.checkbox("Include VYUPY Interest Subsidy (Annual April Credit)", value=True)
 
-def get_repayment_df(loan, tenure, start_dt, p_cap, v_sub_rate, v_active):
+def get_repayment_data(loan, tenure, start_dt, cap_sub, int_sub_rate, is_vyupy):
     sched = []
     curr_bal = loan
     monthly_principal = loan / (tenure * 12)
     for m in range(1, (tenure * 12) + 1):
         curr_dt = start_dt + pd.DateOffset(months=m-1)
-        if m == 1: curr_bal -= p_cap 
+        if m == 1: curr_bal -= cap_sub # Capex credit
         
-        interest = (curr_bal * 0.10) / 12 # Base interest 10%
-        credit = (curr_bal * v_sub_rate) if (v_active and curr_dt.month == 4) else 0
-        
+        interest_charge = (curr_bal * 0.10) / 12 
+        int_credit = (curr_bal * int_sub_rate) if (is_vyupy and curr_dt.month == 4) else 0
+            
         curr_bal -= monthly_principal
-        sched.append({"Month": curr_dt.strftime('%b-%Y'), "Principal": monthly_principal, "Interest": interest, "Subsidy Credit": credit + (p_cap if m == 1 else 0), "Balance": max(0, curr_bal)})
+        sched.append({
+            "Month": curr_dt.strftime('%b-%Y'),
+            "Principal": monthly_principal,
+            "Interest": interest_charge,
+            "Subsidy Credit": int_credit + (cap_sub if m == 1 else 0),
+            "Net Balance": max(0, curr_bal)
+        })
     return pd.DataFrame(sched)
 
-def create_pdf(df):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(200, 10, "PMEGP/MSME Repayment Schedule", ln=True, align='C')
-    pdf.set_font("Arial", 'B', 9)
-    # Header
-    cols = ["Month", "Principal", "Interest", "Credit", "Balance"]
-    for c in cols: pdf.cell(38, 10, c, 1)
-    pdf.ln()
-    # Data
-    pdf.set_font("Arial", size=8)
-    for _, row in df.iterrows():
-        pdf.cell(38, 8, row['Month'], 1)
-        pdf.cell(38, 8, f"{row['Principal']:,.0f}", 1)
-        pdf.cell(38, 8, f"{row['Interest']:,.0f}", 1)
-        pdf.cell(38, 8, f"{row['Subsidy Credit']:,.0f}", 1)
-        pdf.cell(38, 8, f"{row['Balance']:,.0f}", 1)
-        pdf.ln()
-    return pdf.output(dest='S').encode('latin-1')
+p_cap = pmegp_sub if (use_pmegp_in_sched and 'PMEGP' in df['Scheme'].values) else 0
+v_sub = (v_rate/100) if (use_vyupy_in_sched and 'VYUPY' in df['Scheme'].values) else 0
 
-if results:
-    p_credit = pmegp_sub if use_pmegp else 0
-    v_credit_rate = (v_rate / 100) if use_vyupy else 0
-    repay_df = get_repayment_df(req_term_loan + req_wc_loan, loan_tenure, start_date, p_credit, v_credit_rate, use_vyupy)
-    
-    st.dataframe(repay_df.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
-    
-    pdf_file = create_pdf(repay_df)
-    st.download_button("📥 Download Repayment Schedule (PDF)", pdf_file, "Repayment_Schedule.pdf", "application/pdf")
+df_sched = get_repayment_data(req_term_loan + req_wc_loan, loan_tenure, start_date, p_cap, v_sub, use_vyupy_in_sched)
+st.dataframe(df_sched.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Net Balance": "₹{:,.0f}"}))
