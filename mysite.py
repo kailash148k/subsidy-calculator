@@ -1,9 +1,7 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from datetime import datetime, date
 
-# --- 1. RAJASTHAN ODOP DATA ---
+# --- 1. FULL RAJASTHAN ODOP DATA ---
 rajasthan_odop = {
     "Ajmer": "Granite and Marble Products", "Alwar": "Automobiles Parts", "Balotra": "Textile Products",
     "Banswara": "Marble Products", "Baran": "Garlic Products", "Barmer": "Kasheedakari",
@@ -22,103 +20,100 @@ rajasthan_odop = {
 }
 
 st.set_page_config(page_title="Rajasthan MSME Subsidy Pro", layout="wide")
-st.title("⚖️ Rajasthan MSME Subsidy Master Engine")
+st.title("⚖️ Rajasthan MSME Subsidy Comparison Tool")
 
-# --- 2. LOCKED INPUT SECTION ---
+# --- 2. ELIGIBILITY & FINANCIALS ---
 with st.sidebar:
     st.header("🔍 Eligibility Profile")
     is_new_project = st.radio("Project Status", ["New Unit", "Existing Unit"])
     applicant_type = st.radio("Applicant Category", ["Individual Entrepreneur", "Non-Individual"])
+    has_other_subsidy = st.checkbox("Already availed other Govt. Subsidies?")
     
     st.markdown("---")
+    state = st.selectbox("State", ["Rajasthan", "Other"])
     district = st.selectbox("District", list(rajasthan_odop.keys()))
     odop_item = rajasthan_odop[district]
     
     sector = st.selectbox("Sector", ["Manufacturing", "Service", "Food Processing"])
     
     st.markdown("### D. Financials")
+    # Identify Minimum Contribution Requirement
     social_cat = st.selectbox("Social Category", ["General", "OBC", "SC", "ST"])
     gender = st.selectbox("Gender", ["Male", "Female"])
     loc = st.radio("Location", ["Urban", "Rural"])
-    is_special = (gender == "Female" or social_cat != "General" or loc == "Rural")
-    min_cont_pct = 0.05 if is_special else 0.10
+    is_special_cat = (gender == "Female" or social_cat != "General" or loc == "Rural")
+    min_cont_pct = 0.05 if is_special_cat else 0.10
 
-    col_l, col_r = st.columns(2)
-    with col_l:
-        st.markdown("**Project Cost**")
+    # TWO-COLUMN FINANCIAL INPUT
+    col_left, col_right = st.columns(2)
+    
+    with col_left:
+        st.markdown("**Project Cost (Assets)**")
         pm_cost = st.number_input("Plant & Machinery", value=1500000)
-        lb_cost = st.number_input("Building (Shed)", value=300000)
-        wc_req = st.number_input("Working Capital", value=100000)
-        total_project_cost = pm_cost + lb_cost + wc_req + 20000 # Incl Furniture
-        st.info(f"Total: ₹{total_project_cost:,.0f}")
+        furn_cost = st.number_input("Furniture & Fixtures", value=20000)
+        lb_cost = st.number_input("Land & Building (Shed)", value=300000)
+        wc_req = st.number_input("Working Capital Req.", value=100000)
+        other_cost = st.number_input("Other Expenses", value=0)
+        total_project_cost = pm_cost + furn_cost + lb_cost + wc_req + other_cost
+        st.info(f"Total Project Cost: ₹{total_project_cost:,.0f}")
 
-    with col_r:
-        st.markdown("**Funding**")
-        min_amt = total_project_cost * min_cont_pct
-        own_cont = st.number_input(f"Own Capital (Min {int(min_cont_pct*100)}%)", value=float(min_amt))
-        req_loan = total_project_cost - own_cont
-        st.info(f"Total Loan: ₹{req_loan:,.0f}")
+    with col_right:
+        st.markdown("**Means of Finance (Funding)**")
+        # Editable Own Contribution
+        min_amt_req = total_project_cost * min_cont_pct
+        own_cont_amt = st.number_input(f"Own Contribution (Min {int(min_cont_pct*100)}%)", value=float(min_amt_req))
+        
+        if own_cont_amt < min_amt_req:
+            st.error(f"Minimum contribution required: ₹{min_amt_req:,.0f}")
+        
+        req_term_loan = st.number_input("Term Loan Required", value=float(pm_cost + furn_cost + lb_cost + other_cost - own_cont_amt))
+        req_wc_loan = st.number_input("Working Capital Loan", value=float(wc_req))
+        total_funding = own_cont_amt + req_term_loan + req_wc_loan
+        st.info(f"Total Funding: ₹{total_funding:,.0f}")
 
-    start_date = st.date_input("Project Start Date", date(2026, 1, 1))
-    loan_tenure = st.slider("Loan Tenure (Years)", 1, 7, 7)
+    loan_tenure = st.slider("Total Loan Tenure (Years)", 1, 7, 7)
+    edu_8th = st.checkbox("Passed 8th Standard?")
 
-# --- 3. SCHEME SELECTION & ANALYSIS ---
-st.subheader("🏁 Scheme Selection & Comparative Analysis")
-
-# Calculate Potentials
-p_rate = (35 if loc == "Rural" else 25) if is_special else (25 if loc == "Rural" else 15)
-pmegp_cap = (total_project_cost - lb_cost) * (p_rate / 100)
-int_sub_rate = 0.08 if is_special else 0.06
-
-# Selection Checkboxes
-sel_pmegp = st.checkbox(f"PMEGP ({p_rate}% Capital Subsidy)", value=True)
-sel_vyupy = st.checkbox(f"Rajasthan VYUPY ({int(int_sub_rate*100)}% Interest Subvention)", value=True)
-
+# --- 3. SCHEME ENGINE ---
 results = []
-if sel_pmegp:
-    results.append({"Scheme": "PMEGP", "Type": "Capital Grant", "Benefit": pmegp_cap, "Recurrence": "One-time (Month 1)"})
-if sel_vyupy:
-    results.append({"Scheme": "VYUPY", "Type": "Interest Subvention", "Benefit": req_loan * int_sub_rate * loan_tenure, "Recurrence": "Annual (April)"})
+if total_project_cost == total_funding and own_cont_amt >= min_amt_req:
+    # --- VYUPY Logic ---
+    if state == "Rajasthan":
+        eligible_wc = min(req_wc_loan, total_project_cost * 0.30)
+        vyupy_loan = min(req_term_loan + eligible_wc, 20000000)
+        v_rate = 8 if vyupy_loan <= 10000000 else 7
+        if is_special_cat: v_rate += 1
+        vyupy_int_sub = vyupy_loan * (v_rate / 100) * 5
+        vyupy_grant = min(vyupy_loan * 0.25, 500000)
+        if lb_cost <= (total_project_cost * 0.25):
+            results.append({"Scheme": "VYUPY", "Capital %": "25% Grant", "Capital Subsidy": vyupy_grant, "Interest %": f"{v_rate}%", "Tenure": "5 Years", "Interest Subsidy": vyupy_int_sub, "Total Benefit": vyupy_grant + vyupy_int_sub})
 
+    # --- PMEGP Logic ---
+    if is_new_project == "New Unit" and applicant_type == "Individual Entrepreneur" and not has_other_subsidy:
+        p_rate = (35 if loc == "Rural" else 25) if is_special_cat else (25 if loc == "Rural" else 15)
+        pmegp_cost = total_project_cost - lb_cost
+        max_limit = 5000000 if sector == "Manufacturing" else 2000000
+        pmegp_sub = min(pmegp_cost, max_limit) * (p_rate / 100)
+        results.append({"Scheme": "PMEGP", "Capital %": f"{p_rate}%", "Capital Subsidy": pmegp_sub, "Interest %": "0%", "Tenure": "Upfront", "Interest Subsidy": 0, "Total Benefit": pmegp_sub})
+
+    # --- RIPS 2024 ---
+    if state == "Rajasthan":
+        is_odop = st.checkbox(f"Is this specifically for {odop_item}?")
+        r_rate = 8 if (is_odop or gender == "Female" or social_cat != "General") else 6
+        rips_int = (req_term_loan + req_wc_loan) * (r_rate / 100) * loan_tenure
+        results.append({"Scheme": "RIPS 2024", "Capital %": "0%", "Capital Subsidy": 0, "Interest %": f"{r_rate}%", "Tenure": f"{loan_tenure} Years", "Interest Subsidy": rips_int, "Total Benefit": rips_int})
+
+# --- 4. DISPLAY ---
+st.subheader("🏁 Comparative Analysis of Subsidies")
 if results:
-    st.table(pd.DataFrame(results).style.format({"Benefit": "₹{:,.0f}"}))
+    df = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
+    st.table(df.style.format({"Capital Subsidy": "₹{:,.0f}", "Interest Subsidy": "₹{:,.0f}", "Total Benefit": "₹{:,.0f}"}))
 
-# --- 4. REPAYMENT SCHEDULE WITH SUBSIDY LOGIC ---
-st.markdown("---")
-st.subheader("📅 Repayment Schedule with Subsidy Credits")
-
-def get_repayment_schedule(loan, rate, tenure_yrs, start_dt, cap_sub, int_sub_pct):
-    schedule = []
-    curr_bal = loan
-    monthly_principal = loan / (tenure_yrs * 12)
-    
-    for m in range(1, (tenure_yrs * 12) + 1):
-        curr_dt = start_dt + pd.DateOffset(months=m-1)
-        
-        # Feather 1: Capex Subsidy Credit in Month 1
-        if m == 1:
-            curr_bal -= cap_sub
-            
-        # Feather 2: Interest Subsidy Credit every April
-        interest_charge = (curr_bal * rate) / 12
-        int_credit = 0
-        if curr_dt.month == 4 and sel_vyupy:
-            int_credit = (curr_bal * int_sub_pct) # Annual credit logic
-        
-        curr_bal -= monthly_principal
-        schedule.append({
-            "Month": curr_dt.strftime('%b-%Y'),
-            "Principal": monthly_principal,
-            "Gross Interest": interest_charge,
-            "Govt Credit": int_credit + (cap_sub if m == 1 else 0),
-            "Net Balance": max(0, curr_bal)
-        })
-    return pd.DataFrame(schedule)
-
-if st.button("🚀 Generate Detailed Schedule"):
-    df_repay = get_repayment_schedule(req_loan, 0.10, loan_tenure, start_date, 
-                                      pmegp_cap if sel_pmegp else 0, int_sub_rate)
-    st.dataframe(df_repay.style.format({"Principal": "₹{:,.0f}", "Gross Interest": "₹{:,.0f}", 
-                                       "Govt Credit": "₹{:,.0f}", "Net Balance": "₹{:,.0f}"}))
-    
-    st.download_button("📥 Export Schedule to Excel", df_repay.to_csv().encode('utf-8'), "Repayment.csv")
+    st.markdown("---")
+    st.subheader("📋 Project Financing Summary")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Project Cost", f"₹{total_project_cost:,.0f}")
+    c2.metric(f"Own Contribution ({int((own_cont_amt/total_project_cost)*100)}%)", f"₹{own_cont_amt:,.0f}")
+    c3.metric("Bank Loan Required", f"₹{(req_term_loan + req_wc_loan):,.0f}")
+else:
+    st.warning("Financials must match and meet minimum contribution to view results.")
