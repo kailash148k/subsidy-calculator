@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 
-# --- 1. FULL RAJASTHAN ODOP DATA ---
+# --- 1. RAJASTHAN ODOP DATABASE ---
 rajasthan_odop = {
     "Ajmer": "Granite and Marble Products", "Alwar": "Automobiles Parts", "Balotra": "Textile Products",
     "Banswara": "Marble Products", "Baran": "Garlic Products", "Barmer": "Kasheedakari",
@@ -20,13 +20,11 @@ rajasthan_odop = {
     "Tonk": "Slate Stone Products", "Udaipur": "Marble and Granite Products"
 }
 
-# --- BRANDED TITLE & CONTACT ---
-st.set_page_config(page_title="CA Kailash Mali - MSME Tool", layout="wide")
-st.title("⚖️ Rajasthan MSME Subsidy Comparison Tool")
+# --- BRANDED PAGE CONFIG & HEADER (EMOJI REMOVED) ---
+st.set_page_config(page_title="CA Kailash Mali - MSME Subsidy", layout="wide")
+st.title("Rajasthan MSME Subsidy Comparison Tool")
 st.subheader("by CA KAILASH MALI")
-st.markdown(f"""
-**📞 7737306376** | **📧 CAKAILASHMALI4@GMAIL.COM**
-""")
+st.markdown(f"**📞 7737306376** | **📧 CAKAILASHMALI4@GMAIL.COM**")
 st.markdown("---")
 
 # --- 2. ELIGIBILITY & FINANCIALS (LOCKED) ---
@@ -114,12 +112,12 @@ if results:
     st.markdown("---")
     st.subheader("📅 Repayment Schedule Configuration")
     selected_scheme = st.radio(
-        "Select **ONLY ONE** scheme to generate the Repayment Schedule:",
+        "Select **ONLY ONE** scheme for detailed Repayment Analysis:",
         ["None", "PMEGP (Capex Credit)", "VYUPY (Capex + Interest Credit)", "RIPS 2024 (Interest Credit)", "ODOP Standalone (8% Interest Credit)"],
         horizontal=True
     )
 
-# --- 5. REPAYMENT SCHEDULE GENERATOR (ZERO-BALANCE GUARD) ---
+# --- 5. REPAYMENT SCHEDULE (CA-LOGIC: ZERO-BALANCE GUARD) ---
 if results and selected_scheme != "None":
     sched = []
     curr_bal = req_term_loan + req_wc_loan
@@ -135,22 +133,18 @@ if results and selected_scheme != "None":
             curr_bal = max(0, curr_bal - cap_credit)
 
         if curr_bal <= 0:
-            principal_payment = 0
-            interest_charge = 0
-            int_credit = 0
-            curr_bal = 0
+            p_pay, i_chg, i_cred, curr_bal = 0, 0, 0, 0
         else:
-            interest_charge = (curr_bal * 0.10) / 12 
-            int_credit = (curr_bal * (int_rate / 100)) if (int_rate > 0 and curr_dt.month == 4) else 0
-            
-            principal_payment = min(monthly_p_baseline, curr_bal)
-            curr_bal = max(0, curr_bal - principal_payment)
+            i_chg = (curr_bal * 0.10) / 12  # Base 10% Interest
+            i_cred = (curr_bal * (int_rate / 100)) if (int_rate > 0 and curr_dt.month == 4) else 0
+            p_pay = min(monthly_p_baseline, curr_bal)
+            curr_bal = max(0, curr_bal - p_pay)
 
         sched.append({
             "Month": curr_dt.strftime('%b-%Y'), 
-            "Principal": principal_payment, 
-            "Interest": interest_charge, 
-            "Subsidy Credit": int_credit + (cap_credit if m == 1 and cap_credit > 0 else 0), 
+            "Principal": p_pay, 
+            "Interest": i_chg, 
+            "Subsidy Credit": i_cred + (cap_credit if m == 1 and cap_credit > 0 else 0), 
             "Balance": curr_bal
         })
     
