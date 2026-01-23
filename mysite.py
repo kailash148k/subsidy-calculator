@@ -20,7 +20,7 @@ rajasthan_odop = {
     "Tonk": "Slate Stone Products", "Udaipur": "Marble and Granite Products"
 }
 
-# --- BRANDED PAGE CONFIG & HEADER (EMOJI REMOVED) ---
+# --- BRANDED PAGE CONFIG & HEADER ---
 st.set_page_config(page_title="CA Kailash Mali - MSME Subsidy", layout="wide")
 st.title("Rajasthan MSME Subsidy Comparison Tool")
 st.subheader("by CA KAILASH MALI")
@@ -103,7 +103,20 @@ if total_project_cost == total_funding:
         p_sub = min(total_project_cost - lb_cost, 5000000 if sector == "Manufacturing" else 2000000) * (p_rate_pct / 100)
         results.append({"Scheme": "PMEGP", "Cap. Sub": p_sub, "Int %": "0%", "Int. Sub": 0, "Total": p_sub})
 
-# --- 4. DISPLAY & SELECTION ---
+# --- 4. DISPLAY SUMMARY BOX & COMPARISON ---
+st.subheader("📋 Project Profile Summary")
+sum_col1, sum_col2, sum_col3 = st.columns(3)
+with sum_col1:
+    st.markdown(f"**District:** {district}")
+    st.markdown(f"**Sector:** {sector}")
+with sum_col2:
+    st.markdown(f"**Project Cost:** ₹{total_project_cost:,.0f}")
+    st.markdown(f"**ODOP Status:** {'Eligible' if is_odop_confirmed else 'Not Selected'}")
+with sum_col3:
+    st.markdown(f"**Category:** {social_cat} | {gender}")
+    st.markdown(f"**Area:** {loc}")
+
+st.markdown("---")
 st.subheader("🏁 Comparative Analysis of Subsidies")
 if results:
     df_res = pd.DataFrame(results).sort_values(by="Total", ascending=False)
