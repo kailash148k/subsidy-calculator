@@ -20,8 +20,11 @@ rajasthan_odop = {
     "Tonk": "Slate Stone Products", "Udaipur": "Marble and Granite Products"
 }
 
-st.set_page_config(page_title="Rajasthan MSME Subsidy Pro", layout="wide")
+# --- BRANDED TITLE ---
+st.set_page_config(page_title="CA Kailash Mali - MSME Tool", layout="wide")
 st.title("⚖️ Rajasthan MSME Subsidy Comparison Tool")
+st.subheader("by CA KAILASH MALI | 📞 7737306376")
+st.markdown("---")
 
 # --- 2. ELIGIBILITY & FINANCIALS (LOCKED) ---
 with st.sidebar:
@@ -113,7 +116,7 @@ if results:
         horizontal=True
     )
 
-# --- 5. REPAYMENT SCHEDULE GENERATOR (CA-LOGIC UPDATED) ---
+# --- 5. REPAYMENT SCHEDULE GENERATOR (ZERO-BALANCE GUARD) ---
 if results and selected_scheme != "None":
     sched = []
     curr_bal = req_term_loan + req_wc_loan
@@ -125,21 +128,18 @@ if results and selected_scheme != "None":
     for m in range(1, (loan_tenure * 12) + 1):
         curr_dt = start_date + pd.DateOffset(months=m-1)
         
-        # Apply Capex Subsidy as a credit to the balance in Month 1
         if m == 1: 
             curr_bal = max(0, curr_bal - cap_credit)
 
-        # Logic to stop payments once balance is zero
         if curr_bal <= 0:
             principal_payment = 0
             interest_charge = 0
             int_credit = 0
             curr_bal = 0
         else:
-            interest_charge = (curr_bal * 0.10) / 12  # Assuming 10% base interest for calculation
+            interest_charge = (curr_bal * 0.10) / 12 
             int_credit = (curr_bal * (int_rate / 100)) if (int_rate > 0 and curr_dt.month == 4) else 0
             
-            # Principal is the standard EMI unless balance is lower than monthly P
             principal_payment = min(monthly_p_baseline, curr_bal)
             curr_bal = max(0, curr_bal - principal_payment)
 
