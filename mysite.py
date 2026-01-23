@@ -21,13 +21,13 @@ rajasthan_odop = {
 }
 
 # --- BRANDED PAGE CONFIG & HEADER ---
-st.set_page_config(page_title="CA Kailash Mali - MSME Subsidy", layout="wide")
+st.set_page_config(page_title="CA Kailash Mali - MSME Subsidy Specialist", layout="wide")
 st.title("Rajasthan MSME Subsidy Comparison Tool")
 st.subheader("by CA KAILASH MALI")
 st.markdown(f"**📞 7737306376** | **📧 CAKAILASHMALI4@GMAIL.COM**")
 st.markdown("---")
 
-# --- 2. ELIGIBILITY & FINANCIALS (LOCKED) ---
+# --- 2. ELIGIBILITY & FINANCIALS ---
 with st.sidebar:
     st.header("🔍 Eligibility Profile")
     is_new_project = st.radio("Project Status", ["New Unit", "Existing Unit"])
@@ -58,15 +58,16 @@ with st.sidebar:
         wc_req = st.number_input("Working Capital Req.", value=100000)
         other_cost = st.number_input("Other Expenses", value=0)
         total_project_cost = pm_cost + furn_cost + lb_cost + wc_req + other_cost
-        st.info(f"Total Project Cost: ₹{total_project_cost:,.0f}")
+        st.info(f"Total Cost: ₹{total_project_cost:,.0f}")
 
     with col_right:
-        st.markdown("**Means of Finance (Funding)**")
+        st.markdown("**Means of Finance**")
         min_amt_req = total_project_cost * min_cont_pct
-        own_cont_amt = st.number_input(f"Own Contribution (Min {int(min_cont_pct*100)}%)", value=float(min_amt_req))
+        own_cont_amt = st.number_input(f"Own Contribution", value=float(min_amt_req))
         req_term_loan = st.number_input("Term Loan Required", value=float(pm_cost + furn_cost + lb_cost + other_cost - own_cont_amt))
         req_wc_loan = st.number_input("Working Capital Loan", value=float(wc_req))
-        total_funding = own_cont_amt + req_term_loan + req_wc_loan
+        total_loan = req_term_loan + req_wc_loan
+        total_funding = own_cont_amt + total_loan
         st.info(f"Total Funding: ₹{total_funding:,.0f}")
 
     loan_tenure = st.slider("Total Loan Tenure (Years)", 1, 7, 7)
@@ -74,108 +75,85 @@ with st.sidebar:
 
 # --- 3. SCHEME ENGINE ---
 results = []
-v_rate, p_sub, r_rate, o_rate, v_grant = 0, 0, 0, 0, 0
+BASE_BANK_RATE = 0.10 
 
 if total_project_cost == total_funding:
-    # 1. ODOP Standalone
+    def calc_fin_impact(s_cap_sub, s_int_rate, years):
+        net_loan = total_loan - s_cap_sub
+        total_bank_int = (net_loan * BASE_BANK_RATE) * years 
+        total_govt_int_sub = (net_loan * (s_int_rate/100)) * min(5, years)
+        return total_bank_int, total_govt_int_sub, s_int_rate
+
     if is_odop_confirmed:
-        o_rate = 8
-        o_sub = (req_term_loan + req_wc_loan) * (o_rate / 100) * 5
-        results.append({"Scheme": "ODOP Standalone", "Cap. Sub": 0, "Int %": "8%", "Int. Sub": o_sub, "Total": o_sub})
+        o_bi, o_si, o_ir = calc_fin_impact(0, 8, loan_tenure)
+        results.append({"Scheme": "ODOP Standalone", "Cap. Sub": 0, "Bank Interest": o_bi, "Int. Sub": o_si, "Net Interest": o_bi - o_si, "Total Benefit": o_si, "S_Rate": 8})
 
-    # 2. RIPS 2024
     r_rate = 8 if (is_special_cat) else 6
-    r_sub = (req_term_loan + req_wc_loan) * (r_rate / 100) * loan_tenure
-    results.append({"Scheme": "RIPS 2024", "Cap. Sub": 0, "Int %": f"{r_rate}%", "Int. Sub": r_sub, "Total": r_sub})
+    r_bi, r_si, r_ir = calc_fin_impact(0, r_rate, loan_tenure)
+    results.append({"Scheme": "RIPS 2024", "Cap. Sub": 0, "Bank Interest": r_bi, "Int. Sub": r_si, "Net Interest": r_bi - r_si, "Total Benefit": r_si, "S_Rate": r_rate})
 
-    # 3. VYUPY
     if state == "Rajasthan":
-        vyupy_loan = min(req_term_loan + min(req_wc_loan, total_project_cost * 0.30), 20000000)
+        vyupy_loan = min(total_loan, 20000000)
         v_rate = 8 if vyupy_loan <= 10000000 else 7
         if is_special_cat: v_rate += 1
-        v_sub = vyupy_loan * (v_rate / 100) * 5
         v_grant = min(vyupy_loan * 0.25, 500000) if lb_cost <= (total_project_cost * 0.25) else 0
-        results.append({"Scheme": "VYUPY", "Cap. Sub": v_grant, "Int %": f"{v_rate}%", "Int. Sub": v_sub, "Total": v_grant + v_sub})
+        v_bi, v_si, v_ir = calc_fin_impact(v_grant, v_rate, loan_tenure)
+        results.append({"Scheme": "VYUPY", "Cap. Sub": v_grant, "Bank Interest": v_bi, "Int. Sub": v_si, "Net Interest": v_bi - v_si, "Total Benefit": v_grant + v_si, "S_Rate": v_rate})
 
-    # 4. PMEGP
     if is_new_project == "New Unit" and applicant_type == "Individual Entrepreneur" and not has_other_subsidy:
         p_rate_pct = (35 if loc == "Rural" else 25) if is_special_cat else (25 if loc == "Rural" else 15)
         p_sub = min(total_project_cost - lb_cost, 5000000 if sector == "Manufacturing" else 2000000) * (p_rate_pct / 100)
-        results.append({"Scheme": "PMEGP", "Cap. Sub": p_sub, "Int %": "0%", "Int. Sub": 0, "Total": p_sub})
+        p_bi, p_si, p_ir = calc_fin_impact(p_sub, 0, loan_tenure)
+        results.append({"Scheme": "PMEGP", "Cap. Sub": p_sub, "Bank Interest": p_bi, "Int. Sub": 0, "Net Interest": p_bi, "Total Benefit": p_sub, "S_Rate": 0})
 
 # --- 4. DISPLAY SUMMARY BOX & COMPARISON ---
-st.subheader("📋 Project Profile Summary")
-sum_col1, sum_col2, sum_col3 = st.columns(3)
-with sum_col1:
-    st.markdown(f"**District:** {district}")
-    st.markdown(f"**Sector:** {sector}")
-with sum_col2:
-    st.markdown(f"**Project Cost:** ₹{total_project_cost:,.0f}")
-    st.markdown(f"**ODOP Status:** {'Eligible' if is_odop_confirmed else 'Not Selected'}")
-with sum_col3:
-    st.markdown(f"**Category:** {social_cat} | {gender}")
-    st.markdown(f"**Area:** {loc}")
-
-st.markdown("---")
-st.subheader("🏁 Comparative Analysis of Subsidies")
 if results:
-    df_res = pd.DataFrame(results).sort_values(by="Total", ascending=False)
-    st.table(df_res.style.format({"Cap. Sub": "₹{:,.0f}", "Int. Sub": "₹{:,.0f}", "Total": "₹{:,.0f}"}))
+    df_res = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
+    best_net_int = df_res.iloc[0]['Net Interest']
+
+    st.subheader("📋 Project Profile Summary")
+    sum_col1, sum_col2, sum_col3, sum_col4 = st.columns(4)
+    with sum_col1:
+        st.markdown(f"**District:** {district}")
+        st.markdown(f"**Sector:** {sector}")
+    with sum_col2:
+        st.markdown(f"**Project Cost:** ₹{total_project_cost:,.0f}")
+        st.markdown(f"**Total Loan:** ₹{total_loan:,.0f}")
+    with sum_col3:
+        st.markdown(f"**Net Interest Cost:** ₹{best_net_int:,.0f}")
+        st.markdown(f"**ODOP:** {'Eligible' if is_odop_confirmed else 'No'}")
+    with sum_col4:
+        st.markdown(f"**Cat:** {social_cat} ({gender})")
+        st.markdown(f"**Area:** {loc}")
 
     st.markdown("---")
-    st.subheader("📅 Repayment Schedule Configuration")
-    selected_scheme = st.radio(
-        "Select **ONLY ONE** scheme for detailed Repayment Analysis:",
-        ["None", "PMEGP (Capex Credit)", "VYUPY (Capex + Interest Credit)", "RIPS 2024 (Interest Credit)", "ODOP Standalone (8% Interest Credit)"],
-        horizontal=True
-    )
+    st.subheader("🏁 Comparative Analysis of Subsidies")
+    st.table(df_res.drop(columns=['S_Rate']).style.format({
+        "Cap. Sub": "₹{:,.0f}", "Bank Interest": "₹{:,.0f}", 
+        "Int. Sub": "₹{:,.0f}", "Net Interest": "₹{:,.0f}", "Total Benefit": "₹{:,.0f}"
+    }))
 
-# --- 5. REPAYMENT SCHEDULE (CA-LOGIC: ZERO-BALANCE GUARD) ---
-if results and selected_scheme != "None":
+# --- 5. REPAYMENT SCHEDULE ---
+st.markdown("---")
+st.subheader("📅 Detailed Repayment Schedule")
+selected_scheme_name = st.radio("Generate Schedule for:", ["None"] + [r['Scheme'] for r in results], horizontal=True)
+
+if selected_scheme_name != "None":
+    s_data = next(item for item in results if item["Scheme"] == selected_scheme_name)
     sched = []
-    curr_bal = req_term_loan + req_wc_loan
+    curr_bal = total_loan
     monthly_p_baseline = curr_bal / (loan_tenure * 12)
-    
-    cap_credit = p_sub if selected_scheme == "PMEGP (Capex Credit)" else (v_grant if selected_scheme == "VYUPY (Capex + Interest Credit)" else 0)
-    int_rate = v_rate if "VYUPY" in selected_scheme else (r_rate if "RIPS" in selected_scheme else (8 if "ODOP" in selected_scheme else 0))
+    cap_credit, int_rate = s_data['Cap. Sub'], s_data['S_Rate']
 
     for m in range(1, (loan_tenure * 12) + 1):
         curr_dt = start_date + pd.DateOffset(months=m-1)
-        
-        if m == 1: 
-            curr_bal = max(0, curr_bal - cap_credit)
-
+        if m == 1: curr_bal = max(0, curr_bal - cap_credit)
         if curr_bal <= 0:
-            p_pay, i_chg, i_cred, curr_bal = 0, 0, 0, 0
+            p_p, i_ch, i_cr, curr_bal = 0, 0, 0, 0
         else:
-            i_chg = (curr_bal * 0.10) / 12  # Base 10% Interest
-            i_cred = (curr_bal * (int_rate / 100)) if (int_rate > 0 and curr_dt.month == 4) else 0
-            p_pay = min(monthly_p_baseline, curr_bal)
-            curr_bal = max(0, curr_bal - p_pay)
-
-        sched.append({
-            "Month": curr_dt.strftime('%b-%Y'), 
-            "Principal": p_pay, 
-            "Interest": i_chg, 
-            "Subsidy Credit": i_cred + (cap_credit if m == 1 and cap_credit > 0 else 0), 
-            "Balance": curr_bal
-        })
-    
-    df_sched = pd.DataFrame(sched)
-    st.dataframe(df_sched.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
-    st.markdown("---")
-st.subheader("📝 Documents Required for Application")
-col_doc1, col_doc2 = st.columns(2)
-with col_doc1:
-    st.markdown("""
-    - **KYC:** Aadhaar, PAN, and Photo of Promoters.
-    - **Entity:** Udyam Registration & GST Certificate.
-    - **Financials:** Last 3 years ITR & Audit Reports.
-    """)
-with col_doc2:
-    st.markdown("""
-    - **Project:** Quotations for Machinery & Civil Estimates.
-    - **Land:** Sale Deed or Lease Agreement.
-    - **Other:** Bank Statement (6 months).
-    """)
-st.success("Contact CA Kailash Mali at 7737306376 to begin your application process.")
+            i_ch = (curr_bal * BASE_BANK_RATE) / 12 
+            i_cr = (curr_bal * (int_rate / 100)) if (int_rate > 0 and curr_dt.month == 4) else 0
+            p_p = min(monthly_p_baseline, curr_bal)
+            curr_bal = max(0, curr_bal - p_p)
+        sched.append({"Month": curr_dt.strftime('%b-%Y'), "Principal": p_p, "Interest": i_ch, "Subsidy": i_cr + (cap_credit if m == 1 else 0), "Balance": curr_bal})
+    st.dataframe(pd.DataFrame(sched).style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
