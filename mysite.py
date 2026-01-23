@@ -107,30 +107,49 @@ if results:
 
     st.markdown("---")
     st.subheader("📅 Repayment Schedule Configuration")
-    # THE EXCLUSIVE SELECTOR
     selected_scheme = st.radio(
         "Select **ONLY ONE** scheme to generate the Repayment Schedule:",
         ["None", "PMEGP (Capex Credit)", "VYUPY (Capex + Interest Credit)", "RIPS 2024 (Interest Credit)", "ODOP Standalone (8% Interest Credit)"],
         horizontal=True
     )
 
-# --- 5. REPAYMENT SCHEDULE GENERATOR ---
+# --- 5. REPAYMENT SCHEDULE GENERATOR (CA-LOGIC UPDATED) ---
 if results and selected_scheme != "None":
     sched = []
     curr_bal = req_term_loan + req_wc_loan
-    monthly_p = curr_bal / (loan_tenure * 12)
+    monthly_p_baseline = curr_bal / (loan_tenure * 12)
     
-    # Logic mapping based on selection
     cap_credit = p_sub if selected_scheme == "PMEGP (Capex Credit)" else (v_grant if selected_scheme == "VYUPY (Capex + Interest Credit)" else 0)
     int_rate = v_rate if "VYUPY" in selected_scheme else (r_rate if "RIPS" in selected_scheme else (8 if "ODOP" in selected_scheme else 0))
 
     for m in range(1, (loan_tenure * 12) + 1):
         curr_dt = start_date + pd.DateOffset(months=m-1)
-        if m == 1: curr_bal -= cap_credit
-        interest_charge = (curr_bal * 0.10) / 12
-        int_credit = (curr_bal * (int_rate / 100)) if (int_rate > 0 and curr_dt.month == 4) else 0
-        curr_bal -= monthly_p
-        sched.append({"Month": curr_dt.strftime('%b-%Y'), "Principal": monthly_p, "Interest": interest_charge, "Subsidy Credit": int_credit + (cap_credit if m == 1 else 0), "Balance": max(0, curr_bal)})
+        
+        # Apply Capex Subsidy as a credit to the balance in Month 1
+        if m == 1: 
+            curr_bal = max(0, curr_bal - cap_credit)
+
+        # Logic to stop payments once balance is zero
+        if curr_bal <= 0:
+            principal_payment = 0
+            interest_charge = 0
+            int_credit = 0
+            curr_bal = 0
+        else:
+            interest_charge = (curr_bal * 0.10) / 12  # Assuming 10% base interest for calculation
+            int_credit = (curr_bal * (int_rate / 100)) if (int_rate > 0 and curr_dt.month == 4) else 0
+            
+            # Principal is the standard EMI unless balance is lower than monthly P
+            principal_payment = min(monthly_p_baseline, curr_bal)
+            curr_bal = max(0, curr_bal - principal_payment)
+
+        sched.append({
+            "Month": curr_dt.strftime('%b-%Y'), 
+            "Principal": principal_payment, 
+            "Interest": interest_charge, 
+            "Subsidy Credit": int_credit + (cap_credit if m == 1 and cap_credit > 0 else 0), 
+            "Balance": curr_bal
+        })
     
     df_sched = pd.DataFrame(sched)
     st.dataframe(df_sched.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
