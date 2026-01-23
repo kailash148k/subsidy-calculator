@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 
-# --- 1. FULL RAJASTHAN ODOP DATA ---
+# --- 1. RAJASTHAN ODOP DATABASE ---
 rajasthan_odop = {
     "Ajmer": "Granite and Marble Products", "Alwar": "Automobiles Parts", "Balotra": "Textile Products",
     "Banswara": "Marble Products", "Baran": "Garlic Products", "Barmer": "Kasheedakari",
@@ -20,18 +20,29 @@ rajasthan_odop = {
     "Tonk": "Slate Stone Products", "Udaipur": "Marble and Granite Products"
 }
 
-# --- BRANDED TITLE & CONTACT ---
-st.set_page_config(page_title="CA Kailash Mali - MSME Tool", layout="wide")
-st.title("⚖️ Rajasthan MSME Subsidy Comparison Tool")
-st.subheader("by CA KAILASH MALI")
-st.markdown(f"""
-**📞 7737306376** | **📧 CAKAILASHMALI4@GMAIL.COM**
-""")
+# --- BRANDED PAGE CONFIG & PROFESSIONAL HEADER ---
+st.set_page_config(page_title="CA Kailash Mali - MSME Subsidy Specialist", layout="wide")
+
+# Professional Header with CA Branding
+col_logo, col_title = st.columns([1, 5])
+with col_logo:
+    # This renders a stylized text-based CA logo since we are in a script
+    st.markdown("""
+        <div style="background-color:#002e5b; color:white; padding:10px; border-radius:5px; text-align:center; font-weight:bold; font-size:24px;">
+            CA
+        </div>
+    """, unsafe_allow_html=True)
+
+with col_title:
+    st.title("Rajasthan MSME Subsidy Comparison Tool")
+    st.subheader("Developed by CA KAILASH MALI")
+    st.info("📞 **7737306376** |  📧 **CAKAILASHMALI4@GMAIL.COM**")
+
 st.markdown("---")
 
 # --- 2. ELIGIBILITY & FINANCIALS (LOCKED) ---
 with st.sidebar:
-    st.header("🔍 Eligibility Profile")
+    st.header("🔍 Project Eligibility")
     is_new_project = st.radio("Project Status", ["New Unit", "Existing Unit"])
     applicant_type = st.radio("Applicant Category", ["Individual Entrepreneur", "Non-Individual"])
     has_other_subsidy = st.checkbox("Already availed other Govt. Subsidies?")
@@ -40,11 +51,11 @@ with st.sidebar:
     state = st.selectbox("State", ["Rajasthan", "Other"])
     district = st.selectbox("District", list(rajasthan_odop.keys()))
     odop_item = rajasthan_odop[district]
-    is_odop_confirmed = st.checkbox(f"Confirm: Project is for {odop_item}?", value=False)
+    is_odop_confirmed = st.checkbox(f"Confirm ODOP: {odop_item}?", value=False)
     
     sector = st.selectbox("Sector", ["Manufacturing", "Service", "Food Processing"])
     
-    st.markdown("### D. Financials")
+    st.markdown("### D. Financial Profile")
     social_cat = st.selectbox("Social Category", ["General", "OBC", "SC", "ST"])
     gender = st.selectbox("Gender", ["Male", "Female"])
     loc = st.radio("Location", ["Urban", "Rural"])
@@ -53,28 +64,28 @@ with st.sidebar:
 
     col_left, col_right = st.columns(2)
     with col_left:
-        st.markdown("**Project Cost (Assets)**")
+        st.markdown("**Project Assets**")
         pm_cost = st.number_input("Plant & Machinery", value=1500000)
         furn_cost = st.number_input("Furniture & Fixtures", value=20000)
-        lb_cost = st.number_input("Land & Building (Shed)", value=300000)
-        wc_req = st.number_input("Working Capital Req.", value=100000)
+        lb_cost = st.number_input("Land & Building", value=300000)
+        wc_req = st.number_input("Working Capital", value=100000)
         other_cost = st.number_input("Other Expenses", value=0)
         total_project_cost = pm_cost + furn_cost + lb_cost + wc_req + other_cost
-        st.info(f"Total Project Cost: ₹{total_project_cost:,.0f}")
+        st.write(f"**Total Cost: ₹{total_project_cost:,.0f}**")
 
     with col_right:
-        st.markdown("**Means of Finance (Funding)**")
+        st.markdown("**Funding Structure**")
         min_amt_req = total_project_cost * min_cont_pct
-        own_cont_amt = st.number_input(f"Own Contribution (Min {int(min_cont_pct*100)}%)", value=float(min_amt_req))
-        req_term_loan = st.number_input("Term Loan Required", value=float(pm_cost + furn_cost + lb_cost + other_cost - own_cont_amt))
-        req_wc_loan = st.number_input("Working Capital Loan", value=float(wc_req))
+        own_cont_amt = st.number_input(f"Own Contribution", value=float(min_amt_req))
+        req_term_loan = st.number_input("Term Loan Req.", value=float(pm_cost + furn_cost + lb_cost + other_cost - own_cont_amt))
+        req_wc_loan = st.number_input("WC Loan Req.", value=float(wc_req))
         total_funding = own_cont_amt + req_term_loan + req_wc_loan
-        st.info(f"Total Funding: ₹{total_funding:,.0f}")
+        st.write(f"**Total Funding: ₹{total_funding:,.0f}**")
 
-    loan_tenure = st.slider("Total Loan Tenure (Years)", 1, 7, 7)
+    loan_tenure = st.slider("Loan Tenure (Years)", 1, 7, 7)
     start_date = st.date_input("Loan Start Date", date(2026, 1, 1))
 
-# --- 3. SCHEME ENGINE ---
+# --- 3. SUBSIDY CALCULATION ENGINE ---
 results = []
 v_rate, p_sub, r_rate, o_rate, v_grant = 0, 0, 0, 0, 0
 
@@ -105,21 +116,21 @@ if total_project_cost == total_funding:
         p_sub = min(total_project_cost - lb_cost, 5000000 if sector == "Manufacturing" else 2000000) * (p_rate_pct / 100)
         results.append({"Scheme": "PMEGP", "Cap. Sub": p_sub, "Int %": "0%", "Int. Sub": 0, "Total": p_sub})
 
-# --- 4. DISPLAY & SELECTION ---
-st.subheader("🏁 Comparative Analysis of Subsidies")
+# --- 4. OUTPUT DISPLAY ---
+st.subheader("🏁 Comparative Analysis of Available Subsidies")
 if results:
     df_res = pd.DataFrame(results).sort_values(by="Total", ascending=False)
     st.table(df_res.style.format({"Cap. Sub": "₹{:,.0f}", "Int. Sub": "₹{:,.0f}", "Total": "₹{:,.0f}"}))
 
     st.markdown("---")
-    st.subheader("📅 Repayment Schedule Configuration")
+    st.subheader("📅 Detailed Repayment & Subsidy Credit Schedule")
     selected_scheme = st.radio(
-        "Select **ONLY ONE** scheme to generate the Repayment Schedule:",
+        "Generate calculation for:",
         ["None", "PMEGP (Capex Credit)", "VYUPY (Capex + Interest Credit)", "RIPS 2024 (Interest Credit)", "ODOP Standalone (8% Interest Credit)"],
         horizontal=True
     )
 
-# --- 5. REPAYMENT SCHEDULE GENERATOR (ZERO-BALANCE GUARD) ---
+# --- 5. REPAYMENT SCHEDULE (ZERO-BALANCE LOGIC) ---
 if results and selected_scheme != "None":
     sched = []
     curr_bal = req_term_loan + req_wc_loan
@@ -135,24 +146,24 @@ if results and selected_scheme != "None":
             curr_bal = max(0, curr_bal - cap_credit)
 
         if curr_bal <= 0:
-            principal_payment = 0
-            interest_charge = 0
-            int_credit = 0
-            curr_bal = 0
+            p_pay, i_chg, i_cred, curr_bal = 0, 0, 0, 0
         else:
-            interest_charge = (curr_bal * 0.10) / 12 
-            int_credit = (curr_bal * (int_rate / 100)) if (int_rate > 0 and curr_dt.month == 4) else 0
-            
-            principal_payment = min(monthly_p_baseline, curr_bal)
-            curr_bal = max(0, curr_bal - principal_payment)
+            i_chg = (curr_bal * 0.10) / 12  # 10% Base Interest Rate
+            i_cred = (curr_bal * (int_rate / 100)) if (int_rate > 0 and curr_dt.month == 4) else 0
+            p_pay = min(monthly_p_baseline, curr_bal)
+            curr_bal = max(0, curr_bal - p_pay)
 
         sched.append({
             "Month": curr_dt.strftime('%b-%Y'), 
-            "Principal": principal_payment, 
-            "Interest": interest_charge, 
-            "Subsidy Credit": int_credit + (cap_credit if m == 1 and cap_credit > 0 else 0), 
-            "Balance": curr_bal
+            "Principal Payment": p_pay, 
+            "Interest (10%)": i_chg, 
+            "Subsidy Credit": i_cred + (cap_credit if m == 1 and cap_credit > 0 else 0), 
+            "Closing Balance": curr_bal
         })
     
     df_sched = pd.DataFrame(sched)
-    st.dataframe(df_sched.style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
+    st.dataframe(df_sched.style.format({"Principal Payment": "₹{:,.0f}", "Interest (10%)": "₹{:,.0f}", "Subsidy Credit": "₹{:,.0f}", "Closing Balance": "₹{:,.0f}"}))
+
+# Final Professional Footer
+st.markdown("---")
+st.caption(f"© 2026 CA Kailash Mali. This tool is for advisory purposes based on latest Rajasthan MSME policies.")
