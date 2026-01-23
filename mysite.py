@@ -28,7 +28,7 @@ col_logo, col_title = st.columns([1, 5])
 with col_logo:
     # This renders a stylized text-based CA logo since we are in a script
     st.markdown("""
-        <div style="background-color:#002e5b; color:white; padding:10px; border-radius:5px; text-align:center; font-weight:bold; font-size:24px;">
+        <div style="background-color:white; color:#002e5b; padding:10px; border-radius:5px; text-align:center; font-weight:bold; font-size:24px;">
             CA
         </div>
     """, unsafe_allow_html=True)
@@ -167,3 +167,4 @@ if results and selected_scheme != "None":
 # Final Professional Footer
 st.markdown("---")
 st.caption(f"© 2026 CA Kailash Mali. This tool is for advisory purposes based on latest Rajasthan MSME policies.")
+
