@@ -20,10 +20,13 @@ rajasthan_odop = {
     "Tonk": "Slate Stone Products", "Udaipur": "Marble and Granite Products"
 }
 
-# --- BRANDED TITLE ---
+# --- BRANDED TITLE & CONTACT ---
 st.set_page_config(page_title="CA Kailash Mali - MSME Tool", layout="wide")
 st.title("⚖️ Rajasthan MSME Subsidy Comparison Tool")
-st.subheader("by CA KAILASH MALI | 📞 7737306376")
+st.subheader("by CA KAILASH MALI")
+st.markdown(f"""
+**📞 7737306376** | **📧 CAKAILASHMALI4@GMAIL.COM**
+""")
 st.markdown("---")
 
 # --- 2. ELIGIBILITY & FINANCIALS (LOCKED) ---
