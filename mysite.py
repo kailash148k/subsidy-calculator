@@ -157,3 +157,20 @@ if selected_scheme_name != "None":
             curr_bal = max(0, curr_bal - p_p)
         sched.append({"Month": curr_dt.strftime('%b-%Y'), "Principal": p_p, "Interest": i_ch, "Subsidy": i_cr + (cap_credit if m == 1 else 0), "Balance": curr_bal})
     st.dataframe(pd.DataFrame(sched).style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
+st.markdown("---")
+st.subheader("📝 Documents Required for Application")
+col_doc1, col_doc2 = st.columns(2)
+with col_doc1:
+    st.markdown("""
+    - **KYC:** Aadhaar, PAN, and Photo of Promoters.
+    - **Entity:** Udyam Registration & GST Certificate.
+    - **Financials:** Last 3 years ITR & Audit Reports.
+    """)
+with col_doc2:
+    st.markdown("""
+    - **Project:** Quotations for Machinery & Civil Estimates.
+    - **Land:** Sale Deed or Lease Agreement.
+    - **Other:** Bank Statement (6 months).
+    """)
+st.success("Contact CA Kailash Mali at 7737306376 to begin your application process.")
+
