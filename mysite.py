@@ -1,5 +1,5 @@
 import streamlit as st
-import pd as pd
+import pandas as pd  # FIXED THIS LINE
 from datetime import datetime, date
 
 # --- 1. RAJASTHAN ODOP DATABASE ---
@@ -27,7 +27,7 @@ st.subheader("by CA KAILASH MALI")
 st.markdown(f"**📞 7737306376** | **📧 CAKAILASHMALI4@GMAIL.COM**")
 st.markdown("---")
 
-# --- 2. ELIGIBILITY & FINANCIALS (LOCKED INPUTS) ---
+# --- 2. ELIGIBILITY & FINANCIALS ---
 with st.sidebar:
     st.header("🔍 Eligibility Profile")
     is_new_project = st.radio("Project Status", ["New Unit", "Existing Unit"])
@@ -100,38 +100,39 @@ if total_project_cost == total_funding:
         p_sub = min(total_project_cost - lb_cost, 5000000 if sector == "Manufacturing" else 2000000) * (p_rate_pct / 100)
         results.append({"Scheme": "PMEGP", "Cap. Sub": p_sub, "Int %": "0%", "Int. Sub": 0, "Total": p_sub})
 
-# --- 4. NEW IDEA: STRATEGIC INSIGHTS DASHBOARD ---
+# --- 4. STRATEGIC INSIGHTS ---
 st.subheader("💡 Strategic Insights for Client")
-df_res = pd.DataFrame(results).sort_values(by="Total", ascending=False)
-max_benefit = df_res.iloc[0]['Total']
-best_scheme = df_res.iloc[0]['Scheme']
+if results:
+    df_res = pd.DataFrame(results).sort_values(by="Total", ascending=False)
+    max_benefit = df_res.iloc[0]['Total']
+    best_scheme = df_res.iloc[0]['Scheme']
 
-metric_col1, metric_col2, metric_col3 = st.columns(3)
-with metric_col1:
-    st.metric(label="Best Scheme identified", value=best_scheme)
-with metric_col2:
-    st.metric(label="Total Projected Savings", value=f"₹{max_benefit:,.0f}", delta="Subsidy Benefit")
-with metric_col3:
-    net_cost = total_project_cost - max_benefit
-    st.metric(label="Net Effective Project Cost", value=f"₹{net_cost:,.0f}")
+    metric_col1, metric_col2, metric_col3 = st.columns(3)
+    with metric_col1:
+        st.metric(label="Best Scheme Identified", value=best_scheme)
+    with metric_col2:
+        st.metric(label="Total Projected Savings", value=f"₹{max_benefit:,.0f}", delta="Subsidy Benefit")
+    with metric_col3:
+        net_cost = total_project_cost - max_benefit
+        st.metric(label="Net Effective Project Cost", value=f"₹{net_cost:,.0f}")
 
-st.markdown("---")
-# Profile Summary
-st.subheader("📋 Project Profile Summary")
-sum_col1, sum_col2, sum_col3 = st.columns(3)
-with sum_col1:
-    st.markdown(f"**District:** {district} | **Sector:** {sector}")
-with sum_col2:
-    st.markdown(f"**Investment:** ₹{total_project_cost:,.0f} | **Loan:** ₹{(req_term_loan + req_wc_loan):,.0f}")
-with sum_col3:
-    st.markdown(f"**Category:** {social_cat} ({gender}) | **Area:** {loc}")
+    st.markdown("---")
+    # Profile Summary
+    st.subheader("📋 Project Profile Summary")
+    sum_col1, sum_col2, sum_col3 = st.columns(3)
+    with sum_col1:
+        st.markdown(f"**District:** {district} | **Sector:** {sector}")
+    with sum_col2:
+        st.markdown(f"**Investment:** ₹{total_project_cost:,.0f} | **Loan:** ₹{(req_term_loan + req_wc_loan):,.0f}")
+    with sum_col3:
+        st.markdown(f"**Category:** {social_cat} ({gender}) | **Area:** {loc}")
 
-# Comparison Table
-st.markdown("---")
-st.subheader("🏁 Comparative Analysis")
-st.table(df_res.style.format({"Cap. Sub": "₹{:,.0f}", "Int. Sub": "₹{:,.0f}", "Total": "₹{:,.0f}"}))
+    # Comparison Table
+    st.markdown("---")
+    st.subheader("🏁 Comparative Analysis")
+    st.table(df_res.style.format({"Cap. Sub": "₹{:,.0f}", "Int. Sub": "₹{:,.0f}", "Total": "₹{:,.0f}"}))
 
-# --- 5. REPAYMENT SCHEDULE (LOCKED LOGIC) ---
+# --- 5. REPAYMENT SCHEDULE ---
 st.markdown("---")
 st.subheader("📅 Repayment & Credit Schedule")
 selected_scheme = st.radio("Select Scheme for Schedule:", ["None", "PMEGP (Capex Credit)", "VYUPY (Capex + Interest Credit)", "RIPS 2024 (Interest Credit)", "ODOP Standalone (8% Interest Credit)"], horizontal=True)
