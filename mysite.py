@@ -75,26 +75,24 @@ with st.sidebar:
 
 # --- 3. SCHEME ENGINE ---
 results = []
-# Constants for Interest Analysis
-BASE_BANK_RATE = 0.10 # Assuming 10% standard bank interest
+BASE_BANK_RATE = 0.10 
 
 if total_project_cost == total_funding:
-    # Function to calculate bank interest vs subsidy for comparison table
     def calc_fin_impact(s_cap_sub, s_int_rate, years):
         net_loan = total_loan - s_cap_sub
-        total_bank_int = (net_loan * BASE_BANK_RATE) * years # Simple interest projection
+        total_bank_int = (net_loan * BASE_BANK_RATE) * years 
         total_govt_int_sub = (net_loan * (s_int_rate/100)) * min(5, years)
-        return total_bank_int, total_govt_int_sub
+        return total_bank_int, total_govt_int_sub, s_int_rate
 
     # ODOP Standalone
     if is_odop_confirmed:
-        o_bi, o_si = calc_fin_impact(0, 8, loan_tenure)
-        results.append({"Scheme": "ODOP Standalone", "Cap. Sub": 0, "Bank Interest": o_bi, "Int. Sub": o_si, "Net Interest": o_bi - o_si, "Total Benefit": o_si})
+        o_bi, o_si, o_ir = calc_fin_impact(0, 8, loan_tenure)
+        results.append({"Scheme": "ODOP Standalone", "Cap. Sub": 0, "Bank Interest": o_bi, "Int. Sub": o_si, "Net Interest": o_bi - o_si, "Total Benefit": o_si, "S_Rate": 8})
 
     # RIPS 2024
     r_rate = 8 if (is_special_cat) else 6
-    r_bi, r_si = calc_fin_impact(0, r_rate, loan_tenure)
-    results.append({"Scheme": "RIPS 2024", "Cap. Sub": 0, "Bank Interest": r_bi, "Int. Sub": r_si, "Net Interest": r_bi - r_si, "Total Benefit": r_si})
+    r_bi, r_si, r_ir = calc_fin_impact(0, r_rate, loan_tenure)
+    results.append({"Scheme": "RIPS 2024", "Cap. Sub": 0, "Bank Interest": r_bi, "Int. Sub": r_si, "Net Interest": r_bi - r_si, "Total Benefit": r_si, "S_Rate": r_rate})
 
     # VYUPY
     if state == "Rajasthan":
@@ -102,46 +100,64 @@ if total_project_cost == total_funding:
         v_rate = 8 if vyupy_loan <= 10000000 else 7
         if is_special_cat: v_rate += 1
         v_grant = min(vyupy_loan * 0.25, 500000) if lb_cost <= (total_project_cost * 0.25) else 0
-        v_bi, v_si = calc_fin_impact(v_grant, v_rate, loan_tenure)
-        results.append({"Scheme": "VYUPY", "Cap. Sub": v_grant, "Bank Interest": v_bi, "Int. Sub": v_si, "Net Interest": v_bi - v_si, "Total Benefit": v_grant + v_si})
+        v_bi, v_si, v_ir = calc_fin_impact(v_grant, v_rate, loan_tenure)
+        results.append({"Scheme": "VYUPY", "Cap. Sub": v_grant, "Bank Interest": v_bi, "Int. Sub": v_si, "Net Interest": v_bi - v_si, "Total Benefit": v_grant + v_si, "S_Rate": v_rate})
 
     # PMEGP
     if is_new_project == "New Unit" and applicant_type == "Individual Entrepreneur" and not has_other_subsidy:
         p_rate_pct = (35 if loc == "Rural" else 25) if is_special_cat else (25 if loc == "Rural" else 15)
         p_sub = min(total_project_cost - lb_cost, 5000000 if sector == "Manufacturing" else 2000000) * (p_rate_pct / 100)
-        p_bi, p_si = calc_fin_impact(p_sub, 0, loan_tenure)
-        results.append({"Scheme": "PMEGP", "Cap. Sub": p_sub, "Bank Interest": p_bi, "Int. Sub": 0, "Net Interest": p_bi, "Total Benefit": p_sub})
+        p_bi, p_si, p_ir = calc_fin_impact(p_sub, 0, loan_tenure)
+        results.append({"Scheme": "PMEGP", "Cap. Sub": p_sub, "Bank Interest": p_bi, "Int. Sub": 0, "Net Interest": p_bi, "Total Benefit": p_sub, "S_Rate": 0})
 
 # --- 4. DISPLAY ---
 if results:
     df_res = pd.DataFrame(results).sort_values(by="Total Benefit", ascending=False)
     
     st.subheader("💡 Strategic Insights")
-    max_ben = df_res.iloc[0]['Total Benefit']
-    net_interest_cost = df_res.iloc[0]['Net Interest']
-    
     m1, m2, m3 = st.columns(3)
-    m1.metric("Max Benefit Identified", df_res.iloc[0]['Scheme'])
-    m2.metric("Total Project Savings", f"₹{max_ben:,.0f}")
-    m3.metric("Net Interest Payable (Client)", f"₹{net_interest_cost:,.0f}")
+    m1.metric("Top Scheme", df_res.iloc[0]['Scheme'])
+    m2.metric("Total Benefit", f"₹{df_res.iloc[0]['Total Benefit']:,.0f}")
+    m3.metric("Net Int. Cost", f"₹{df_res.iloc[0]['Net Interest']:,.0f}")
 
     st.markdown("---")
     st.subheader("🏁 Comparative Analysis")
-    st.table(df_res.style.format({
-        "Cap. Sub": "₹{:,.0f}", 
-        "Bank Interest": "₹{:,.0f}", 
-        "Int. Sub": "₹{:,.0f}", 
-        "Net Interest": "₹{:,.0f}", 
-        "Total Benefit": "₹{:,.0f}"
-    }))
+    st.table(df_res.drop(columns=['S_Rate']).style.format({"Cap. Sub": "₹{:,.0f}", "Bank Interest": "₹{:,.0f}", "Int. Sub": "₹{:,.0f}", "Net Interest": "₹{:,.0f}", "Total Benefit": "₹{:,.0f}"}))
 
 # --- 5. REPAYMENT SCHEDULE ---
 st.markdown("---")
 st.subheader("📅 Detailed Repayment Schedule")
-selected_scheme = st.radio("Schedule for:", ["None", "PMEGP", "VYUPY", "RIPS 2024", "ODOP"], horizontal=True)
+selected_scheme_name = st.radio("Generate Schedule for:", ["None"] + [r['Scheme'] for r in results], horizontal=True)
 
-if selected_scheme != "None":
-    # Selection mapping (Matching schedule logic to table logic)
-    # ... [Internal schedule logic remains locked and identical to baseline] ...
-    st.info(f"Showing projected monthly schedule for {selected_scheme}...")
-    # (Full schedule generator code as per 23jan26-cakailash baseline)
+if selected_scheme_name != "None":
+    # Find the data for the selected scheme
+    s_data = next(item for item in results if item["Scheme"] == selected_scheme_name)
+    
+    sched = []
+    curr_bal = total_loan
+    monthly_p_baseline = curr_bal / (loan_tenure * 12)
+    
+    cap_credit = s_data['Cap. Sub']
+    int_rate = s_data['S_Rate']
+
+    for m in range(1, (loan_tenure * 12) + 1):
+        curr_dt = start_date + pd.DateOffset(months=m-1)
+        if m == 1: curr_bal = max(0, curr_bal - cap_credit)
+
+        if curr_bal <= 0:
+            p_p, i_ch, i_cr, curr_bal = 0, 0, 0, 0
+        else:
+            i_ch = (curr_bal * BASE_BANK_RATE) / 12 
+            i_cr = (curr_bal * (int_rate / 100)) if (int_rate > 0 and curr_dt.month == 4) else 0
+            p_p = min(monthly_p_baseline, curr_bal)
+            curr_bal = max(0, curr_bal - p_p)
+
+        sched.append({
+            "Month": curr_dt.strftime('%b-%Y'), 
+            "Principal": p_p, 
+            "Interest": i_ch, 
+            "Subsidy": i_cr + (cap_credit if m == 1 and cap_credit > 0 else 0), 
+            "Balance": curr_bal
+        })
+    
+    st.dataframe(pd.DataFrame(sched).style.format({"Principal": "₹{:,.0f}", "Interest": "₹{:,.0f}", "Subsidy": "₹{:,.0f}", "Balance": "₹{:,.0f}"}))
